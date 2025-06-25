@@ -152,6 +152,7 @@ def add_ocr_to_subs(
     original_height=None,
     downscale=1,
     base_font_size=24,
+    quiet=False,
 ):
     # 強制所有 Style 的 Alignment 為 5 (中心)
     for style in subs.styles.values():
@@ -203,15 +204,16 @@ def add_ocr_to_subs(
             y = int(original_height - y_vision)  # ASS: 上到下
 
             pos_tag = f"{{\\pos({x},{y})\\fs{font_size}}}"
-            print(
-                f"[DEBUG] OCR text '{text}' at normalized bbox: x={x_norm:.3f}, y={y_norm:.3f}, w={w_norm:.3f}, h={h_norm:.3f}"
-            )
-            print(
-                f"[DEBUG] Frame size: {frame_width}x{frame_height}, Original size: {original_width}x{original_height}, Downscale: {downscale}"
-            )
-            print(
-                f"[DEBUG] Converted to pixel position: x={x} (with offset {x_offset}), y={y}, font_size: {font_size}"
-            )
+            if not quiet:
+                print(
+                    f"[DEBUG] OCR text '{text}' at normalized bbox: x={x_norm:.3f}, y={y_norm:.3f}, w={w_norm:.3f}, h={h_norm:.3f}"
+                )
+                print(
+                    f"[DEBUG] Frame size: {frame_width}x{frame_height}, Original size: {original_width}x{original_height}, Downscale: {downscale}"
+                )
+                print(
+                    f"[DEBUG] Converted to pixel position: x={x} (with offset {x_offset}), y={y}, font_size: {font_size}"
+                )
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=f"{pos_tag}{text}"))
         elif text:
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=text))
@@ -316,7 +318,7 @@ def main(
     frame_iter = extract_and_downscale_frames(
         video_path, interval, downscale, quiet=quiet, scan_rect=scan_rect
     )
-    if HAS_TQDM and quiet:
+    if HAS_TQDM and not quiet:
         frame_iter = tqdm(frame_iter, total=total_frames, desc="Frames")
     frame_count = 0
     for t, frame, crop_offset in frame_iter:
@@ -338,6 +340,7 @@ def main(
                 original_height,
                 downscale,
                 base_font_size,
+                quiet,
             )
         del frame
         gc.collect()
