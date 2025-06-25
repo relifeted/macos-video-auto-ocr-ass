@@ -4,8 +4,17 @@ import re
 from collections import defaultdict
 
 import pysubs2
+from langdetect import detect
 from llama_cpp import Llama
 from tqdm import tqdm
+
+# 新增 opencc
+try:
+    from opencc import OpenCC
+
+    opencc = OpenCC("s2t")
+except ImportError:
+    opencc = None
 
 
 def download_model(model_repo, model_filename, local_dir):
@@ -36,15 +45,26 @@ def group_by_time(subs):
     return groups
 
 
-def translate_with_llama(llm, text, src_lang, tgt_lang):
+def translate_with_llama(llm, text, src_lang, tgt_lang, retry=1):
     prompt = (
-        f"Translate the following text from {src_lang} to {tgt_lang}:\n"
+        f"Translate the following text from {src_lang} to {tgt_lang}.\n"
+        f"Only output the translation in {tgt_lang}, do not use any other language or add explanation.\n"
         f"{text}\n"
         f"Translation:"
     )
-    output = llm(prompt, max_tokens=512, stop=["\n"])
-    result = output["choices"][0]["text"].strip()
-    return result
+    for _ in range(retry + 1):
+        output = llm(prompt, max_tokens=512, stop=["\n"])
+        result = output["choices"][0]["text"].strip()
+        # 自動檢查語言
+        if tgt_lang.lower() == "traditional chinese":
+            try:
+                if detect(result) == "zh-tw":
+                    return result
+            except Exception:
+                pass
+        else:
+            return result
+    return result  # fallback
 
 
 def main():
@@ -72,6 +92,7 @@ def main():
     parser.add_argument("--model-dir", default="models", help="模型下載資料夾")
     parser.add_argument("--n-ctx", type=int, default=2048, help="llama-cpp n_ctx")
     parser.add_argument("--n-threads", type=int, default=4, help="llama-cpp n_threads")
+    parser.add_argument("--show-text", action="store_true", help="顯示翻譯前後的文字")
     args = parser.parse_args()
 
     print("下載/載入模型中...")
@@ -94,6 +115,15 @@ def main():
         merged_text = " ".join(texts)
         src_lang = args.src_lang if args.src_lang != "auto" else "auto-detect"
         translated = translate_with_llama(llm, merged_text, src_lang, args.tgt_lang)
+        # 若目標語言為繁體中文，強制用 opencc 轉換
+        if args.tgt_lang.lower() == "traditional chinese" and opencc is not None:
+            translated = opencc.convert(translated)
+        if args.show_text:
+            print("--- 原文 ---")
+            print(merged_text)
+            print("--- 譯文 ---")
+            print(translated)
+            print()
         translated_lines = translated.split(" ")
         for i, line in enumerate(lines):
             if i == 0:
