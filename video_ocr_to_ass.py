@@ -43,27 +43,27 @@ def cgimage_to_pil(cg_image):
 
 
 def extract_and_downscale_frames(
-    video_path, interval=1.0, downscale=2, quiet=False, scan_rect=None
+    video_path, interval=1.0, downscale=2, quiet=False, scan_rect=None, debug=False
 ):
-    if not quiet:
+    if debug:
         print(f"[DEBUG] Entering extract_and_downscale_frames for {video_path}")
     url = NSURL.fileURLWithPath_(os.path.abspath(video_path))
     asset = AVAsset.assetWithURL_(url)
     generator = AVAssetImageGenerator.assetImageGeneratorWithAsset_(asset)
     generator.setAppliesPreferredTrackTransform_(True)
     duration = asset.duration().value / asset.duration().timescale
-    if not quiet:
+    if debug:
         print(f"[DEBUG] Video duration: {duration} seconds")
     times = [CMTimeMakeWithSeconds(t, 600) for t in np.arange(0, duration, interval)]
     yielded = False
     for idx, (t, cm_time) in enumerate(zip(np.arange(0, duration, interval), times)):
         if t >= duration:
-            if not quiet:
+            if debug:
                 print(
                     f"[DEBUG] Skipping frame at {t:.2f}s (beyond duration {duration:.2f}s)"
                 )
             continue
-        if not quiet:
+        if debug:
             print(f"[DEBUG] Attempting to extract frame at {t:.2f}s (index {idx})")
         try:
             result = generator.copyCGImageAtTime_actualTime_error_(cm_time, None, None)
@@ -72,11 +72,11 @@ def extract_and_downscale_frames(
             else:
                 cg_image = result
             if cg_image is None:
-                if not quiet:
+                if debug:
                     print(f"[DEBUG] cg_image is None at {t:.2f}s")
                 continue
         except Exception as e:
-            if not quiet:
+            if debug:
                 print(f"[DEBUG] Failed to extract frame at {t:.2f}s: {e}")
             continue
         pil_image = cgimage_to_pil(cg_image)
@@ -95,18 +95,18 @@ def extract_and_downscale_frames(
             h_ = int(h / downscale)
             pil_image = pil_image.crop((x_, y_, x_ + w_, y_ + h_))
             crop_offset = (x_, y_)
-        if not quiet:
+        if debug:
             print(
                 f"[DEBUG] Extracted and downscaled frame at {t:.2f}s, PIL image size: {getattr(pil_image, 'size', None)}, mode: {getattr(pil_image, 'mode', None)}, crop_offset: {crop_offset}"
             )
         yielded = True
         yield t, pil_image, crop_offset
-    if not yielded and not quiet:
+    if not yielded and debug:
         print("[DEBUG] No frames were yielded from extract_and_downscale_frames!")
 
 
-def ocr_image(image, recognition_languages=None, quiet=False):
-    if not quiet:
+def ocr_image(image, recognition_languages=None, quiet=False, debug=False):
+    if debug:
         print(
             f"[DEBUG] Entering ocr_image, image type: {type(image)}, size: {getattr(image, 'size', None)}"
         )
@@ -134,7 +134,7 @@ def ocr_image(image, recognition_languages=None, quiet=False):
     # 預設啟用自動語言偵測
     request.setAutomaticallyDetectsLanguage_(True)
     if recognition_languages:
-        if not quiet:
+        if debug:
             print(f"[DEBUG] Setting recognition languages: {recognition_languages}")
         request.setRecognitionLanguages_(recognition_languages)
     handler.performRequests_error_([request], None)
@@ -153,6 +153,7 @@ def add_ocr_to_subs(
     downscale=1,
     base_font_size=24,
     quiet=False,
+    debug=False,
 ):
     # 強制所有 Style 的 Alignment 為 5 (中心)
     for style in subs.styles.values():
@@ -204,7 +205,7 @@ def add_ocr_to_subs(
             y = int(original_height - y_vision)  # ASS: 上到下
 
             pos_tag = f"{{\\pos({x},{y})\\fs{font_size}}}"
-            if not quiet:
+            if debug:
                 print(
                     f"[DEBUG] OCR text '{text}' at normalized bbox: x={x_norm:.3f}, y={y_norm:.3f}, w={w_norm:.3f}, h={h_norm:.3f}"
                 )
@@ -268,7 +269,8 @@ def main(
     position_tolerance=10,  # 位置容差（像素）
     time_gap_threshold=500,  # 時間間隙閾值（毫秒）
 ):
-    if not quiet:
+    debug = not quiet
+    if debug:
         print(
             f"[DEBUG] Starting main with video_path={video_path}, output_ass={output_ass}, interval={interval}, recognition_languages={recognition_languages}, downscale={downscale}, x_offset={x_offset}, base_font_size={base_font_size}, merge_events={merge_events}"
         )
@@ -316,17 +318,17 @@ def main(
             subs.info["PlayResY"] = original_height
 
     frame_iter = extract_and_downscale_frames(
-        video_path, interval, downscale, quiet=quiet, scan_rect=scan_rect
+        video_path, interval, downscale, quiet=quiet, scan_rect=scan_rect, debug=debug
     )
-    if HAS_TQDM and not quiet:
+    if HAS_TQDM:
         frame_iter = tqdm(frame_iter, total=total_frames, desc="Frames")
     frame_count = 0
     for t, frame, crop_offset in frame_iter:
         frame_count += 1
         ocr_results = ocr_image(
-            frame, recognition_languages=recognition_languages, quiet=quiet
+            frame, recognition_languages=recognition_languages, quiet=quiet, debug=debug
         )
-        if not quiet:
+        if debug:
             print(f"[DEBUG] OCR at {t:.2f}s: {repr(ocr_results)}")
         if ocr_results:
             add_ocr_to_subs(
@@ -341,10 +343,11 @@ def main(
                 downscale,
                 base_font_size,
                 quiet,
+                debug,
             )
         del frame
         gc.collect()
-    if frame_count == 0 and not quiet:
+    if frame_count == 0 and debug:
         print("[DEBUG] No frames processed!")
 
     # 合併連續事件
