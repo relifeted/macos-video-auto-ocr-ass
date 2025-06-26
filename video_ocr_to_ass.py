@@ -48,10 +48,14 @@ def extract_and_downscale_frames(
     if debug:
         print(f"[DEBUG] Entering extract_and_downscale_frames for {video_path}")
     url = NSURL.fileURLWithPath_(os.path.abspath(video_path))
-    asset = AVAsset.assetWithURL_(url)
-    generator = AVAssetImageGenerator.assetImageGeneratorWithAsset_(asset)
-    generator.setAppliesPreferredTrackTransform_(True)
-    duration = asset.duration().value / asset.duration().timescale
+    # 不再預先建立 asset，改為每次 frame 都新建
+    # asset = AVAsset.assetWithURL_(url)
+    # duration = asset.duration().value / asset.duration().timescale
+    # 先用一個 asset 取得 duration
+    temp_asset = AVAsset.assetWithURL_(url)
+    duration = temp_asset.duration().value / temp_asset.duration().timescale
+    del temp_asset
+    gc.collect()
     if debug:
         print(f"[DEBUG] Video duration: {duration} seconds")
     times = [CMTimeMakeWithSeconds(t, 600) for t in np.arange(0, duration, interval)]
@@ -66,6 +70,10 @@ def extract_and_downscale_frames(
         if debug:
             print(f"[DEBUG] Attempting to extract frame at {t:.2f}s (index {idx})")
         try:
+            # 每次都新建 asset 和 generator，處理完一幀就釋放
+            asset = AVAsset.assetWithURL_(url)
+            generator = AVAssetImageGenerator.assetImageGeneratorWithAsset_(asset)
+            generator.setAppliesPreferredTrackTransform_(True)
             result = generator.copyCGImageAtTime_actualTime_error_(cm_time, None, None)
             if isinstance(result, tuple):
                 cg_image = result[0]
@@ -74,6 +82,9 @@ def extract_and_downscale_frames(
             if cg_image is None:
                 if debug:
                     print(f"[DEBUG] cg_image is None at {t:.2f}s")
+                del generator
+                del asset
+                gc.collect()
                 continue
         except Exception as e:
             if debug:
@@ -101,6 +112,10 @@ def extract_and_downscale_frames(
             )
         yielded = True
         yield t, pil_image, crop_offset
+        # 顯式釋放 generator 和 asset
+        del generator
+        del asset
+        gc.collect()
     if not yielded and debug:
         print("[DEBUG] No frames were yielded from extract_and_downscale_frames!")
 
