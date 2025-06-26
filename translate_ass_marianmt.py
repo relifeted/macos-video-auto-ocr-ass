@@ -67,21 +67,23 @@ def load_translators(src_lang, tgt_lang, device):
         if src2en and en2tgt:
             translators["src2en"] = src2en
             translators["en2tgt"] = en2tgt
-            print(f"載入中轉翻譯模型: opus-mt-{src_lang}-en + opus-mt-en-{tgt_lang_for_model}")
+            print(
+                f"載入中轉翻譯模型: opus-mt-{src_lang}-en + opus-mt-en-{tgt_lang_for_model}"
+            )
             return translators, tgt_lang_for_model, True
 
     raise RuntimeError(f"找不到可用的 {src_lang}->{tgt_lang} 翻譯模型，也無法中轉。")
 
 
 def translate_with_loaded_models(text, translators, need_opencc, max_length=512):
-    """使用預先載入的模型進行翻譯，固定max_length為512並預先斷句"""
-    # 固定max_length為512以避免警告
+    """使用預先載入的模型進行翻譯，max_length為512，僅當長度超過450才斷句"""
     fixed_max_length = 512
+    split_threshold = 450  # 只有超過 450 才斷句
 
     # 預先斷句處理
-    def split_text_into_chunks(text, max_chunk_length):
-        """將文本分割成不超過指定長度的片段"""
-        if len(text) <= max_chunk_length:
+    def split_text_into_chunks(text, max_chunk_length, threshold):
+        """將文本分割成不超過指定長度的片段，僅當超過 threshold 才分割"""
+        if len(text) <= threshold:
             return [text]
 
         # 按句子分割
@@ -127,8 +129,8 @@ def translate_with_loaded_models(text, translators, need_opencc, max_length=512)
 
         return chunks
 
-    # 將文本分割成適當長度的片段
-    text_chunks = split_text_into_chunks(text, fixed_max_length)
+    # 只有超過 split_threshold 才分割
+    text_chunks = split_text_into_chunks(text, fixed_max_length, split_threshold)
     translated_parts = []
 
     for chunk in text_chunks:
@@ -218,8 +220,8 @@ def main():
         merged_text = " ".join(texts)
 
         # 檢查文本長度並記錄
-        if len(merged_text) > 512:
-            print(f"[INFO] 文本長度 {len(merged_text)} 超過512，將進行自動斷句處理")
+        if len(merged_text) > 450:
+            print(f"[INFO] 文本長度 {len(merged_text)} 超過450，將進行自動斷句處理")
 
         try:
             translated = translate_with_loaded_models(
