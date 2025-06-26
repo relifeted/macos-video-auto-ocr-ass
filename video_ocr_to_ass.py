@@ -1,8 +1,4 @@
-import gc
 import os
-import sys
-import time
-from pathlib import Path
 
 import numpy as np
 import objc
@@ -10,7 +6,6 @@ import pysubs2
 from AVFoundation import AVAsset, AVAssetImageGenerator
 from Cocoa import NSURL
 from CoreMedia import CMTimeMakeWithSeconds
-from Foundation import NSValue
 from PIL import Image
 from Quartz import (
     CGDataProviderCopyData,
@@ -55,7 +50,6 @@ def extract_and_downscale_frames(
     temp_asset = AVAsset.assetWithURL_(url)
     duration = temp_asset.duration().value / temp_asset.duration().timescale
     del temp_asset
-    gc.collect()
     if debug:
         print(f"[DEBUG] Video duration: {duration} seconds")
     times = [CMTimeMakeWithSeconds(t, 600) for t in np.arange(0, duration, interval)]
@@ -84,7 +78,6 @@ def extract_and_downscale_frames(
                     print(f"[DEBUG] cg_image is None at {t:.2f}s")
                 del generator
                 del asset
-                gc.collect()
                 continue
         except Exception as e:
             if debug:
@@ -115,7 +108,6 @@ def extract_and_downscale_frames(
         # 顯式釋放 generator 和 asset
         del generator
         del asset
-        gc.collect()
     if not yielded and debug:
         print("[DEBUG] No frames were yielded from extract_and_downscale_frames!")
 
@@ -361,7 +353,6 @@ def main(
                 debug,
             )
         del frame
-        gc.collect()
     if frame_count == 0 and debug:
         print("[DEBUG] No frames processed!")
 
