@@ -222,9 +222,7 @@ class MarianMTTranslator(BaseTranslator):
         direct_translator = self._get_translator(self.src_lang, self.tgt_lang_for_model)
         if direct_translator:
             self.translators["direct"] = direct_translator
-            print(
-                f"載入直接翻譯模型: opus-mt-{self.src_lang}-{self.tgt_lang_for_model}"
-            )
+            print(f"載入直接翻譯模型: opus-mt-{self.src_lang}-{self.tgt_lang_for_model}")
             return
 
         # 若找不到，嘗試 src-en + en-tgt
@@ -240,9 +238,7 @@ class MarianMTTranslator(BaseTranslator):
                 )
                 return
 
-        raise RuntimeError(
-            f"找不到可用的 {self.src_lang}->{self.tgt_lang} 翻譯模型，也無法中轉。"
-        )
+        raise RuntimeError(f"找不到可用的 {self.src_lang}->{self.tgt_lang} 翻譯模型，也無法中轉。")
 
     def _translate_text(self, text: str) -> str:
         """使用 MarianMT 翻譯文字"""

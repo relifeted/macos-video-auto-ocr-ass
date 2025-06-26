@@ -67,9 +67,7 @@ def load_translators(src_lang, tgt_lang, device):
         if src2en and en2tgt:
             translators["src2en"] = src2en
             translators["en2tgt"] = en2tgt
-            print(
-                f"載入中轉翻譯模型: opus-mt-{src_lang}-en + opus-mt-en-{tgt_lang_for_model}"
-            )
+            print(f"載入中轉翻譯模型: opus-mt-{src_lang}-en + opus-mt-en-{tgt_lang_for_model}")
             return translators, tgt_lang_for_model, True
 
     raise RuntimeError(f"找不到可用的 {src_lang}->{tgt_lang} 翻譯模型，也無法中轉。")

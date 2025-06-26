@@ -55,7 +55,6 @@ class TestCGImageToPil:
             "macos_video_auto_ocr_ass.video_utils.CGDataProviderCopyData",
             return_value=mock_data,
         ):
-
             result = cgimage_to_pil(mock_cg_image)
 
             assert isinstance(result, Image.Image)
@@ -95,7 +94,6 @@ class TestGetVideoInfo:
         with patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl, patch(
             "macos_video_auto_ocr_ass.video_utils.AVAsset"
         ) as mock_avasset:
-
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
 
@@ -119,7 +117,6 @@ class TestGetVideoInfo:
         with patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl, patch(
             "macos_video_auto_ocr_ass.video_utils.AVAsset"
         ) as mock_avasset:
-
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
 
@@ -167,7 +164,6 @@ class TestExtractFrames:
         ) as mock_cmtime, patch(
             "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
         ) as mock_cgimage_to_pil:
-
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
@@ -212,7 +208,6 @@ class TestExtractFrames:
         ) as mock_cmtime, patch(
             "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
         ) as mock_cgimage_to_pil:
-
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
@@ -259,7 +254,6 @@ class TestExtractFrames:
         ) as mock_cmtime, patch(
             "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
         ) as mock_cgimage_to_pil:
-
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
@@ -307,7 +301,6 @@ class TestExtractFrames:
         ) as mock_generator_class, patch(
             "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
         ) as mock_cmtime:
-
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
@@ -346,7 +339,6 @@ class TestOCRImage:
         ) as mock_handler_class, patch(
             "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
         ) as mock_request_class:
-
             mock_nsdata.dataWithBytes_length_.return_value = "mock_nsdata"
             mock_ciimage.imageWithData_.return_value = "mock_ciimage"
             mock_handler = Mock()
@@ -433,7 +425,6 @@ class TestOCRImage:
         ) as mock_handler_class, patch(
             "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
         ) as mock_request_class:
-
             mock_nsdata.dataWithBytes_length_.return_value = "mock_nsdata"
             mock_ciimage.imageWithData_.return_value = "mock_ciimage"
             mock_handler = Mock()
@@ -471,7 +462,6 @@ class TestOCRImage:
         ) as mock_handler_class, patch(
             "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
         ) as mock_request_class:
-
             mock_nsdata.dataWithBytes_length_.return_value = "mock_nsdata"
             mock_ciimage.imageWithData_.return_value = "mock_ciimage"
             mock_handler = Mock()
@@ -526,7 +516,6 @@ class TestVideoUtilsIntegration:
         ) as mock_cgimage_to_pil, patch(
             "macos_video_auto_ocr_ass.video_utils.ocr_image"
         ) as mock_ocr_image:
-
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
