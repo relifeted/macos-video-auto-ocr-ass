@@ -5,9 +5,9 @@ from collections import defaultdict
 
 import pysubs2
 from huggingface_hub.utils import RepositoryNotFoundError
+from langdetect import detect
 from tqdm import tqdm
 from transformers import pipeline
-from transformers.pipelines import Pipeline
 
 # 新增 opencc
 try:
@@ -165,6 +165,13 @@ def translate_with_loaded_models(text, translators, need_opencc, max_length=512)
     return translated
 
 
+def detect_lang(text):
+    try:
+        return detect(text)
+    except Exception:
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_ass", help="輸入 ASS 字幕檔")
@@ -218,6 +225,16 @@ def main():
             texts.append(text.strip())
             tags_list.append(tags)
         merged_text = " ".join(texts)
+
+        # 使用 langdetect 偵測語言
+        detected_lang = detect_lang(merged_text)
+        if detected_lang and detected_lang != args.src_lang:
+            # 非 src-lang，全部保留原文
+            for i, line in enumerate(lines):
+                new_line = line.copy()
+                new_line.text = restore_tags(texts[i], tags_list[i])
+                new_lines.append(new_line)
+            continue
 
         # 檢查文本長度並記錄
         if len(merged_text) > 450:
