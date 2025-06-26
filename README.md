@@ -34,6 +34,88 @@ pip install --upgrade torch torchvision torchaudio
 
 ---
 
+## 開發工具（Makefile）
+
+本專案提供 Makefile 來簡化開發和測試流程。
+
+### 查看所有可用命令
+
+```bash
+make help
+```
+
+### 測試相關命令
+
+```bash
+# 運行所有測試
+make test
+
+# 運行單元測試
+make test-unit
+
+# 運行整合測試
+make test-integration
+
+# 運行快速測試（排除慢速測試）
+make test-fast
+
+# 運行 macOS 特定測試
+make test-macos
+
+# 運行測試並生成覆蓋率報告
+make test-coverage
+
+# 運行特定測試檔案
+make test-specific FILE=test_config.py
+
+# 運行特定測試函數
+make test-specific FILE=test_config.py FUNCTION=TestAppConfig
+```
+
+### 代碼品質檢查
+
+```bash
+# 格式化代碼
+make format
+
+# 檢查代碼風格
+make lint
+
+# 類型檢查
+make type-check
+
+# 運行所有代碼品質檢查
+make all-checks
+```
+
+### 其他開發命令
+
+```bash
+# 安裝開發依賴
+make install-dev
+
+# 清理暫存檔案
+make clean
+
+# 運行所有測試和代碼品質檢查
+make all-tests
+
+# 啟動 Poetry shell
+make shell
+
+# 檢查環境
+make check-env
+```
+
+### 快速開發設置
+
+```bash
+# 一次性設置開發環境
+make dev
+```
+
+---
+
 ## 1. 使用 llama-cpp-python + GGUF 模型
 
 ### 指令
