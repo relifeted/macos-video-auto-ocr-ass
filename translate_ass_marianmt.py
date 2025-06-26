@@ -75,21 +75,90 @@ def load_translators(src_lang, tgt_lang, device):
     raise RuntimeError(f"找不到可用的 {src_lang}->{tgt_lang} 翻譯模型，也無法中轉。")
 
 
-def translate_with_loaded_models(text, translators, need_opencc, max_length):
-    """使用預先載入的模型進行翻譯"""
-    if "direct" in translators:
-        translated = translators["direct"](text, max_length=max_length)[0][
-            "translation_text"
-        ].strip()
-    elif "src2en" in translators and "en2tgt" in translators:
-        en_text = translators["src2en"](text, max_length=max_length)[0][
-            "translation_text"
-        ].strip()
-        translated = translators["en2tgt"](en_text, max_length=max_length)[0][
-            "translation_text"
-        ].strip()
-    else:
-        raise RuntimeError("沒有可用的翻譯模型")
+def translate_with_loaded_models(text, translators, need_opencc, max_length=512):
+    """使用預先載入的模型進行翻譯，固定max_length為512並預先斷句"""
+    # 固定max_length為512以避免警告
+    fixed_max_length = 512
+
+    # 預先斷句處理
+    def split_text_into_chunks(text, max_chunk_length):
+        """將文本分割成不超過指定長度的片段"""
+        if len(text) <= max_chunk_length:
+            return [text]
+
+        # 按句子分割
+        sentences = re.split(r"[.!?。！？\n]", text)
+        chunks = []
+        current_chunk = ""
+
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+
+            # 如果單個句子就超過限制，按詞分割
+            if len(sentence) > max_chunk_length:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                    current_chunk = ""
+
+                # 按詞分割長句子
+                words = sentence.split()
+                temp_chunk = ""
+                for word in words:
+                    if len(temp_chunk + " " + word) <= max_chunk_length:
+                        temp_chunk += " " + word if temp_chunk else word
+                    else:
+                        if temp_chunk:
+                            chunks.append(temp_chunk.strip())
+                        temp_chunk = word
+                if temp_chunk:
+                    current_chunk = temp_chunk
+            else:
+                # 檢查加上這個句子是否會超過限制
+                if len(current_chunk + " " + sentence) <= max_chunk_length:
+                    current_chunk += " " + sentence if current_chunk else sentence
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    current_chunk = sentence
+
+        # 添加最後一個片段
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+
+        return chunks
+
+    # 將文本分割成適當長度的片段
+    text_chunks = split_text_into_chunks(text, fixed_max_length)
+    translated_parts = []
+
+    for chunk in text_chunks:
+        if not chunk.strip():
+            continue
+
+        try:
+            if "direct" in translators:
+                translated_part = translators["direct"](
+                    chunk, max_length=fixed_max_length
+                )[0]["translation_text"].strip()
+            elif "src2en" in translators and "en2tgt" in translators:
+                en_text = translators["src2en"](chunk, max_length=fixed_max_length)[0][
+                    "translation_text"
+                ].strip()
+                translated_part = translators["en2tgt"](
+                    en_text, max_length=fixed_max_length
+                )[0]["translation_text"].strip()
+            else:
+                raise RuntimeError("沒有可用的翻譯模型")
+
+            translated_parts.append(translated_part)
+        except Exception as e:
+            print(f"[WARNING] 翻譯片段失敗，使用原文: {e}")
+            translated_parts.append(chunk)
+
+    # 合併翻譯結果
+    translated = " ".join(translated_parts)
 
     if need_opencc and opencc is not None:
         translated = opencc.convert(translated)
@@ -113,7 +182,10 @@ def main():
     )
     parser.add_argument("--device", default="mps", help="運算裝置（如 cpu, mps, cuda）")
     parser.add_argument(
-        "--max-length", type=int, default=1024, help="翻譯最大長度（預設 1024）"
+        "--max-length",
+        type=int,
+        default=512,
+        help="翻譯最大長度（已固定為512以避免模型警告，此參數僅為兼容性保留）",
     )
     parser.add_argument("--show-text", action="store_true", help="顯示翻譯前後的文字")
     args = parser.parse_args()
@@ -146,13 +218,22 @@ def main():
             texts.append(text.strip())
             tags_list.append(tags)
         merged_text = " ".join(texts)
+
+        # 檢查文本長度並記錄
+        if len(merged_text) > 512:
+            print(f"[INFO] 文本長度 {len(merged_text)} 超過512，將進行自動斷句處理")
+
         try:
             translated = translate_with_loaded_models(
-                merged_text, translators, need_opencc, args.max_length
+                merged_text, translators, need_opencc
             )
         except RuntimeError as e:
-            print(f"[ERROR] {e}")
+            print(f"[ERROR] 翻譯失敗: {e}")
             translated = merged_text  # fallback: 不翻譯
+        except Exception as e:
+            print(f"[ERROR] 翻譯過程中發生未預期錯誤: {e}")
+            translated = merged_text  # fallback: 不翻譯
+
         if args.show_text:
             print("--- 原文 ---")
             print(merged_text)
