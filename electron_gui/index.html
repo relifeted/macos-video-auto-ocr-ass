@@ -2,30 +2,230 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>影片自動 OCR 與字幕工具</title>
+  <title>影片自動字幕工具</title>
   <style>
-    body { font-family: sans-serif; margin: 2em; }
-    button { margin: 1em 0; }
-    #result { margin-top: 2em; white-space: pre-wrap; }
+    :root {
+      --bg: #18191c;
+      --panel: #232326;
+      --border: #333;
+      --text: #f5f5f7;
+      --accent: #0a84ff;
+      --button: #222226;
+      --button-hover: #2c2c31;
+      --input-bg: #232326;
+      --input-border: #444;
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', Arial, sans-serif;
+    }
+    #app {
+      max-width: 900px;
+      margin: 40px auto;
+      background: var(--panel);
+      border-radius: 18px;
+      box-shadow: 0 8px 32px #0008;
+      padding: 32px 40px 40px 40px;
+      border: 1px solid var(--border);
+    }
+    h1, h2, h3 {
+      font-weight: 600;
+      margin-top: 0;
+      color: var(--text);
+    }
+    button {
+      background: var(--button);
+      color: var(--text);
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      padding: 10px 24px;
+      font-size: 1rem;
+      margin: 8px 0;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: var(--button-hover);
+      border-color: var(--accent);
+    }
+    input, select, textarea {
+      background: var(--input-bg);
+      color: var(--text);
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      padding: 8px;
+      margin: 4px 0 12px 0;
+      font-size: 1rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    label {
+      font-size: 0.98rem;
+      color: #aaa;
+      margin-bottom: 2px;
+      display: block;
+    }
+    .section {
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section:last-child {
+      border-bottom: none;
+    }
+    #videoPlayer, #resultVideoPlayer {
+      width: 100%;
+      max-height: 320px;
+      background: #111;
+      border-radius: 10px;
+      margin-bottom: 16px;
+    }
+    #ocrProgress {
+      width: 100%;
+      height: 18px;
+      margin: 12px 0;
+      accent-color: var(--accent);
+    }
+    #assEditor {
+      width: 100%;
+      min-height: 180px;
+      font-family: 'Menlo', 'Consolas', 'monospace';
+      font-size: 1rem;
+      background: #18191c;
+      color: #f5f5f7;
+      border-radius: 8px;
+      border: 1px solid var(--input-border);
+      margin-bottom: 12px;
+    }
+    .row {
+      display: flex;
+      gap: 24px;
+    }
+    .col {
+      flex: 1;
+    }
+    .param-group {
+      margin-bottom: 12px;
+    }
+    .subtitle-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .subtitle-line input {
+      flex: 1;
+      font-size: 1rem;
+      padding: 4px 8px;
+    }
+    .subtitle-line button {
+      padding: 4px 12px;
+      font-size: 0.95rem;
+    }
   </style>
 </head>
 <body>
-  <h1>影片自動 OCR 與字幕工具</h1>
-  <input type="file" id="videoInput" accept="video/*">
-  <br>
-  <button onclick="runOcr()">執行 OCR 並產生字幕</button>
-  <div id="result"></div>
+  <div id="app">
+    <!-- 1. 初始畫面 -->
+    <div id="welcome" class="section">
+      <h1>影片自動字幕工具</h1>
+      <p>請先選擇影片檔案開始</p>
+      <button id="selectVideoBtn">選擇影片</button>
+    </div>
+
+    <!-- 2. 影片選擇後 -->
+    <div id="videoSection" class="section" style="display:none;">
+      <video id="videoPlayer" controls></video>
+      <div class="row">
+        <div class="col">
+          <h3>OCR 參數</h3>
+          <div class="param-group">
+            <label for="interval">取樣間隔（秒）</label>
+            <input type="number" id="interval" value="1.0" min="0.1" step="0.1">
+          </div>
+          <div class="param-group">
+            <label for="languages">語言（如 zh-Hant,en,ja）</label>
+            <input type="text" id="languages" value="zh-Hant">
+          </div>
+          <div class="param-group">
+            <label for="downscale">縮放比例</label>
+            <input type="number" id="downscale" value="1" min="1" max="4">
+          </div>
+          <div class="param-group">
+            <label for="baseFontSize">字體大小</label>
+            <input type="number" id="baseFontSize" value="24" min="10" max="80">
+          </div>
+        </div>
+        <div class="col">
+          <h3>合併字幕參數</h3>
+          <div class="param-group">
+            <label for="positionTolerance">位置容差（像素）</label>
+            <input type="number" id="positionTolerance" value="10" min="0" max="100">
+          </div>
+          <div class="param-group">
+            <label for="timeGapThreshold">時間間隙閾值（毫秒）</label>
+            <input type="number" id="timeGapThreshold" value="500" min="0" max="5000">
+          </div>
+        </div>
+      </div>
+      <button id="startOcrBtn">開始辨識字幕</button>
+    </div>
+
+    <!-- 3. 辨識進行中 -->
+    <div id="progressSection" class="section" style="display:none;">
+      <h3>字幕辨識中...</h3>
+      <progress id="ocrProgress" value="0" max="100"></progress>
+      <span id="progressText"></span>
+    </div>
+
+    <!-- 4. 辨識完成 -->
+    <div id="resultSection" class="section" style="display:none;">
+      <video id="resultVideoPlayer" controls></video>
+      <div>
+        <h3>字幕編輯</h3>
+        <textarea id="assEditor" rows="12"></textarea>
+        <div>
+          <button id="mergeAssBtn">合併字幕</button>
+          <button id="translateAssBtn">整句翻譯</button>
+          <button id="saveAssBtn">儲存字幕</button>
+        </div>
+      </div>
+      <div>
+        <h3>逐句翻譯</h3>
+        <div id="lineTranslateArea">
+          <!-- 動態產生每句字幕的翻譯按鈕與欄位 -->
+        </div>
+      </div>
+    </div>
+  </div>
   <script>
-    function runOcr() {
-      const input = document.getElementById('videoInput');
-      if (!input.files.length) {
-        alert('請先選擇影片檔案');
-        return;
-      }
-      const file = input.files[0];
-      // 這裡預留呼叫 Python API 的程式碼
-      document.getElementById('result').innerText = '（這裡會顯示 OCR 結果）';
-    }
+    // 這裡預留 UI 切換與事件邏輯，API 串接後續補上
+    document.getElementById('selectVideoBtn').onclick = function() {
+      document.getElementById('welcome').style.display = 'none';
+      document.getElementById('videoSection').style.display = '';
+    };
+    document.getElementById('startOcrBtn').onclick = function() {
+      document.getElementById('videoSection').style.display = 'none';
+      document.getElementById('progressSection').style.display = '';
+      // 模擬進度
+      let p = 0;
+      const prog = document.getElementById('ocrProgress');
+      const text = document.getElementById('progressText');
+      const timer = setInterval(() => {
+        p += 10;
+        prog.value = p;
+        text.innerText = p + '%';
+        if (p >= 100) {
+          clearInterval(timer);
+          document.getElementById('progressSection').style.display = 'none';
+          document.getElementById('resultSection').style.display = '';
+        }
+      }, 200);
+    };
   </script>
 </body>
 </html> 
