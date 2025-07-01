@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>影片自動 OCR 與字幕工具</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    button { margin: 1em 0; }
+    #result { margin-top: 2em; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>影片自動 OCR 與字幕工具</h1>
+  <input type="file" id="videoInput" accept="video/*">
+  <br>
+  <button onclick="runOcr()">執行 OCR 並產生字幕</button>
+  <div id="result"></div>
+  <script>
+    function runOcr() {
+      const input = document.getElementById('videoInput');
+      if (!input.files.length) {
+        alert('請先選擇影片檔案');
+        return;
+      }
+      const file = input.files[0];
+      // 這裡預留呼叫 Python API 的程式碼
+      document.getElementById('result').innerText = '（這裡會顯示 OCR 結果）';
+    }
+  </script>
+</body>
+</html> 

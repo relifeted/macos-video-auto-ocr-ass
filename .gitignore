@@ -4,3 +4,4 @@ __pycache__
 lid.176.bin
 .coverage
 .DS_Store
+node_modules

@@ -46,5 +46,12 @@ CFLAGS = -framework Foundation -framework AVFoundation -framework CoreImage -fra
 
 video_ocr_to_json: video_ocr_to_json.m
 	$(CC) $(CFLAGS) -o video_ocr_to_json video_ocr_to_json.m
-
+	
 all: video_ocr_to_json 
+
+run-electron:
+	cd electron_gui && npm start
+
+run-api:
+	poetry run python -m macos_video_auto_ocr_ass.ocr_api
+
