@@ -40,12 +40,11 @@ def merge_ass_subs(
         )
         # 內容相同
         text_same = cur_text == next_text
-        # 時間連續
-        time_gap = next_event.start - current.end
-        time_close = 0 <= time_gap <= time_gap_threshold
-        if pos_close and text_same and time_close:
+        # 時間連續或重疊
+        time_overlap_or_close = next_event.start <= current.end + time_gap_threshold
+        if pos_close and text_same and time_overlap_or_close:
             # 合併：延長 current 的 end
-            current.end = next_event.end
+            current.end = max(current.end, next_event.end)
         else:
             merged_events.append(current)
             current = next_event

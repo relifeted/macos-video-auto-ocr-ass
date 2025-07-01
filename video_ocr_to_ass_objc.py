@@ -106,31 +106,44 @@ def add_ocr_to_subs(
         text = result["text"].strip()
         bbox = result["bbox"]  # [x, y, width, height]
 
+        # Debug print bbox 原始值
+        if debug:
+            print(f"[DEBUG] bbox 原始值: {bbox}")
+
         if text:
-            # Vision: 左下為原點, 歸一化 (0-1); ASS: 左上為原點, 使用 PlayRes 座標系統
-            x_norm = bbox[0]
-            y_norm = bbox[1]
-            w_norm = bbox[2]
-            h_norm = bbox[3]
+            x_raw = bbox[0]
+            y_raw = bbox[1]
+            w_raw = bbox[2]
+            h_raw = bbox[3]
 
-            # 計算 Vision 框中心點（歸一化座標）
-            center_x_norm = x_norm + w_norm / 2
-            center_y_norm = y_norm + h_norm / 2
+            # 判斷 bbox 是否為 0~1 區間（比例），否則視為像素座標
+            is_normalized = all(0.0 <= v <= 1.0 for v in [x_raw, y_raw, w_raw, h_raw])
 
-            # 轉換到原始視頻分辨率
-            x = int(center_x_norm * original_width) + x_offset
-            y_vision = center_y_norm * original_height  # Vision: 下到上
-            y = int(original_height - y_vision)  # ASS: 上到下
+            if is_normalized:
+                # 歸一化比例，需乘原始解析度
+                center_x_norm = x_raw + w_raw / 2
+                center_y_norm = y_raw + h_raw / 2
+                x = int(center_x_norm * original_width) + x_offset
+                y_vision = center_y_norm * original_height
+                y = int(original_height - y_vision)
+                if debug:
+                    print(
+                        f"[DEBUG] bbox 為比例，轉換後 x={x}, y={y} (原始寬高 {original_width}x{original_height})"
+                    )
+            else:
+                # 已是像素座標，直接使用
+                center_x = x_raw + w_raw / 2
+                center_y = y_raw + h_raw / 2
+                x = int(center_x) + x_offset
+                y = int(original_height - center_y)
+                if debug:
+                    print(
+                        f"[DEBUG] bbox 為像素座標，直接使用 x={x}, y={y} (原始寬高 {original_width}x{original_height})"
+                    )
 
-            pos_tag = f"{{\\pos({x},{y})\\fs{base_font_size}}}"
+            pos_tag = f"{{\\pos({x},{y})}}"
             if debug:
-                print(
-                    f"[DEBUG] OCR text '{text}' at normalized bbox: x={x_norm:.3f}, y={y_norm:.3f}, w={w_norm:.3f}, h={h_norm:.3f}"
-                )
-                print(f"[DEBUG] Original size: {original_width}x{original_height}")
-                print(
-                    f"[DEBUG] Converted to pixel position: x={x} (with offset {x_offset}), y={y}, font_size: {base_font_size}"
-                )
+                print(f"[DEBUG] 產生 pos 標籤: {pos_tag} 文字: {text}")
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=f"{pos_tag}{text}"))
         elif text:
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=text))
