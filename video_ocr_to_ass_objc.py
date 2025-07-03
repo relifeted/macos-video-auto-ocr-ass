@@ -5,7 +5,10 @@
 """
 
 import json
+import math
+import multiprocessing
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,6 +33,9 @@ def run_video_ocr_to_json(
     scan_rect=None,
     languages=None,
     quiet=False,
+    start_time=None,
+    end_time=None,
+    show_progress=False,
 ):
     """使用 Objective-C 程式進行影片 OCR 並輸出 JSON"""
     if not quiet:
@@ -59,18 +65,27 @@ def run_video_ocr_to_json(
         if len(cmd) == 5:  # 需要先添加預設的 scan_rect
             cmd.append("0,0,1,1")
         cmd.append(languages_str)
+    else:
+        cmd.append("__AUTO__")  # 傳遞特殊字串，代表自動偵測語言
+
+    # 新增 start_time, end_time, show_progress
+    if start_time is not None:
+        cmd.append(str(start_time))
+    if end_time is not None:
+        cmd.append(str(end_time))
+    cmd.append("1" if show_progress else "0")
 
     if not quiet:
         print(f"[DEBUG] Running command: {' '.join(cmd)}")
 
-    # 執行 Objective-C 程式
+    # 改用 Popen 直接 relay stdout/stderr
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        if not quiet:
-            print(f"[DEBUG] Objective-C OCR output: {result.stdout}")
+        proc = subprocess.Popen(cmd)
+        proc.communicate()
+        if proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd)
     except subprocess.CalledProcessError as e:
         print(f"[ERROR] Objective-C OCR failed: {e}")
-        print(f"[ERROR] stderr: {e.stderr}")
         raise
 
 
@@ -181,114 +196,146 @@ def merge_continuous_events(subs, position_tolerance=10, time_gap_threshold=500)
     return len(subs.events)
 
 
+def get_video_duration(video_path):
+    """取得影片長度（秒）"""
+    probe_cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        video_path,
+    ]
+    result = subprocess.run(probe_cmd, capture_output=True, text=True)
+    return float(result.stdout.strip())
+
+
 def main(
     video_path,
     output_ass,
     interval=1.0,
     recognition_languages=None,
     quiet=False,
+    show_progress=False,
     downscale=1,
-    chunk_size=None,  # ignored, for compatibility
-    x_offset=0,  # X 軸偏移補償
-    scan_rect=None,  # 掃描區域 (x, y, w, h)，需要是 0-1 之間的值
-    base_font_size=24,  # 基礎字體大小
-    merge_events=True,  # 是否合併連續事件
-    position_tolerance=10,  # 位置容差（像素）
-    time_gap_threshold=500,  # 時間間隙閾值（毫秒）
+    chunk_size=300.0,  # 每段長度（秒）
+    x_offset=0,
+    scan_rect=None,
+    base_font_size=24,
+    merge_events=True,
+    position_tolerance=10,
+    time_gap_threshold=500,
 ):
     debug = not quiet
     if debug:
         print(f"[DEBUG] Processing video: {video_path}")
         print(f"[DEBUG] Output ASS: {output_ass}")
 
-    # 建立臨時 JSON 檔案
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-        temp_json = tmp.name
+    # 取得影片長度
+    duration = get_video_duration(video_path)
+    if debug:
+        print(f"[DEBUG] Video duration: {duration} seconds")
 
-    try:
-        # 執行 OCR 並生成 JSON
+    # 分段
+    num_chunks = math.ceil(duration / chunk_size)
+    temp_json_files = []
+    for i in range(num_chunks):
+        start_time = i * chunk_size
+        end_time = min((i + 1) * chunk_size, duration)
+        if start_time >= end_time:
+            if not quiet:
+                print(
+                    f"[DEBUG] Skip chunk {i}: start_time ({start_time}) >= end_time ({end_time})"
+                )
+            continue
+        temp_json = tempfile.NamedTemporaryFile(suffix=f"_chunk{i}.json", delete=False)
+        temp_json_files.append(temp_json.name)
+        temp_json.close()
         run_video_ocr_to_json(
             video_path,
-            temp_json,
+            temp_json_files[-1],
             interval=interval,
             downscale=downscale,
             scan_rect=scan_rect,
             languages=recognition_languages,
             quiet=quiet,
+            start_time=start_time,
+            end_time=end_time,
+            show_progress=show_progress,
         )
 
-        # 讀取 JSON 結果
-        with open(temp_json, "r") as f:
-            ocr_results = json.load(f)
+    # 合併所有 JSON
+    ocr_results = []
+    for json_file in temp_json_files:
+        with open(json_file, "r") as f:
+            ocr_results.extend(json.load(f))
+        os.unlink(json_file)
 
-        # 獲取影片尺寸
-        probe_cmd = [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=width,height",
-            "-of",
-            "json",
-            video_path,
-        ]
-        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
-        video_info = json.loads(probe_result.stdout)
-        original_width = video_info["streams"][0]["width"]
-        original_height = video_info["streams"][0]["height"]
+    # 獲取影片尺寸
+    probe_cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "json",
+        video_path,
+    ]
+    probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+    video_info = json.loads(probe_result.stdout)
+    original_width = video_info["streams"][0]["width"]
+    original_height = video_info["streams"][0]["height"]
 
-        # 建立字幕檔案
-        subs = pysubs2.SSAFile()
-        style = pysubs2.SSAStyle(
-            fontname="Arial",
-            fontsize=base_font_size,
-            primarycolor=pysubs2.Color(255, 255, 255, 0),  # 白色
-            outlinecolor=pysubs2.Color(0, 0, 0, 0),  # 黑色邊框
-            bold=True,
+    # 建立字幕檔案
+    subs = pysubs2.SSAFile()
+    style = pysubs2.SSAStyle(
+        fontname="Arial",
+        fontsize=base_font_size,
+        primarycolor=pysubs2.Color(255, 255, 255, 0),  # 白色
+        outlinecolor=pysubs2.Color(0, 0, 0, 0),  # 黑色邊框
+        bold=True,
+    )
+    subs.styles["Default"] = style
+
+    # 處理每一幀的 OCR 結果
+    if HAS_TQDM and not quiet:
+        ocr_results = tqdm(ocr_results, desc="Processing frames")
+
+    for frame_data in ocr_results:
+        add_ocr_to_subs(
+            subs,
+            frame_data,
+            original_width=original_width,
+            original_height=original_height,
+            x_offset=x_offset,
+            base_font_size=base_font_size,
+            quiet=quiet,
+            debug=debug,
         )
-        subs.styles["Default"] = style
 
-        # 處理每一幀的 OCR 結果
-        if HAS_TQDM and not quiet:
-            ocr_results = tqdm(ocr_results, desc="Processing frames")
-
-        for frame_data in ocr_results:
-            add_ocr_to_subs(
-                subs,
-                frame_data,
-                original_width=original_width,
-                original_height=original_height,
-                x_offset=x_offset,
-                base_font_size=base_font_size,
-                quiet=quiet,
-                debug=debug,
-            )
-
-        # 合併連續事件
-        if merge_events:
-            if not quiet:
-                print("[INFO] Merging continuous events...")
-            num_events = merge_continuous_events(
-                subs,
-                position_tolerance=position_tolerance,
-                time_gap_threshold=time_gap_threshold,
-            )
-            if not quiet:
-                print(f"[INFO] Final number of events: {num_events}")
-
-        # 保存字幕檔案
-        subs.save(output_ass)
+    # 合併連續事件
+    if merge_events:
         if not quiet:
-            print(f"[INFO] Subtitle file saved to: {output_ass}")
+            print("[INFO] Merging continuous events...")
+        num_events = merge_continuous_events(
+            subs,
+            position_tolerance=position_tolerance,
+            time_gap_threshold=time_gap_threshold,
+        )
+        if not quiet:
+            print(f"[INFO] Final number of events: {num_events}")
 
-    finally:
-        # 清理臨時檔案
-        try:
-            os.unlink(temp_json)
-        except OSError:
-            pass
+    # 保存字幕檔案
+    subs.save(output_ass)
+    if not quiet:
+        print(f"[INFO] Subtitle file saved to: {output_ass}")
 
 
 if __name__ == "__main__":
@@ -354,10 +401,21 @@ if __name__ == "__main__":
         help="Time gap threshold in milliseconds for merging events (default: 500)",
     )
     parser.add_argument(
+        "--chunk-size",
+        type=float,
+        default=300.0,
+        help="Chunk size in seconds for parallel OCR (default: 300.0)",
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
         help="Suppress debug output",
+    )
+    parser.add_argument(
+        "--show-progress",
+        action="store_true",
+        help="Show progress for each chunk (default: False)",
     )
 
     args = parser.parse_args()
@@ -385,6 +443,7 @@ if __name__ == "__main__":
         interval=args.interval,
         recognition_languages=recognition_languages,
         quiet=args.quiet,
+        show_progress=args.show_progress,
         downscale=args.downscale,
         x_offset=args.x_offset,
         scan_rect=scan_rect,
@@ -392,4 +451,5 @@ if __name__ == "__main__":
         merge_events=args.merge_events,
         position_tolerance=args.position_tolerance,
         time_gap_threshold=args.time_gap_threshold,
+        chunk_size=args.chunk_size,
     )

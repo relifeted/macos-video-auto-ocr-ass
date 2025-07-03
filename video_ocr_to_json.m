@@ -4,11 +4,14 @@
 #import <AppKit/AppKit.h>
 
 void printUsage(const char *programName) {
-    NSLog(@"Usage: %s <video_path> <output_json> [interval] [downscale] [scan_rect_x,scan_rect_y,scan_rect_w,scan_rect_h] [languages]", programName);
+    NSLog(@"Usage: %s <video_path> <output_json> [interval] [downscale] [scan_rect_x,scan_rect_y,scan_rect_w,scan_rect_h] [languages] [start_time] [end_time] [show_progress]", programName);
     NSLog(@"  - interval: Time interval between frames in seconds (default: 1.0)");
     NSLog(@"  - downscale: Downscale factor for frames (default: 1)");
     NSLog(@"  - scan_rect: Scan region in format x,y,width,height (pixel coordinates, default: entire frame)");
     NSLog(@"  - languages: Comma-separated language codes (e.g., ja,en,zh-Hant)");
+    NSLog(@"  - start_time: Start time in seconds (default: 0.0)");
+    NSLog(@"  - end_time: End time in seconds (default: video duration)");
+    NSLog(@"  - show_progress: 1 to show progress, 0 to hide (default: 0)");
 }
 
 CGImageRef createDownscaledImage(CGImageRef originalImage, int downscale) {
@@ -75,20 +78,44 @@ int main(int argc, const char * argv[]) {
         NSArray *languages = nil;
         if (argc > 6) {
             NSString *languagesStr = @(argv[6]);
-            languages = [languagesStr componentsSeparatedByString:@","];
+            if ([languagesStr isEqualToString:@"__AUTO__"] || [languagesStr length] == 0) {
+                languages = nil;
+            } else {
+                languages = [languagesStr componentsSeparatedByString:@","];
+            }
         }
+        float start_time = (argc > 7) ? atof(argv[7]) : 0.0;
+        float end_time = (argc > 8) ? atof(argv[8]) : -1.0;
+        int show_progress = (argc > 9) ? atoi(argv[9]) : 0;
         
         NSURL *url = [NSURL fileURLWithPath:videoPath];
         AVAsset *asset = [AVAsset assetWithURL:url];
         CMTime duration = asset.duration;
         float durationSeconds = CMTimeGetSeconds(duration);
+        NSLog(@"[DEBUG] durationSeconds: %.3f, start_time: %.3f, end_time: %.3f", durationSeconds, start_time, end_time);
+        
+        if (end_time < 0.0 || end_time > durationSeconds) {
+            end_time = durationSeconds;
+        }
+        if (start_time < 0.0) {
+            start_time = 0.0;
+        }
+        if (start_time >= end_time) {
+            NSLog(@"start_time must be less than end_time");
+            return 1;
+        }
+        
+        int total_frames = (int)((end_time - start_time) / interval);
+        int progress_step = total_frames / 10; // 每 10% 顯示一次
+        if (progress_step < 1) progress_step = 1;
+        int frame_count = 0;
         
         AVAssetImageGenerator *generator = [[AVAssetImageGenerator alloc] initWithAsset:asset];
         generator.appliesPreferredTrackTransform = YES;
         
         NSMutableArray *resultsArray = [NSMutableArray array];
         
-        for (float t = 0.0; t < durationSeconds; t += interval) {
+        for (float t = start_time; t < end_time; t += interval) {
             @autoreleasepool {
                 CMTime time = CMTimeMakeWithSeconds(t, 600);
                 NSError *error = nil;
@@ -159,6 +186,11 @@ int main(int argc, const char * argv[]) {
                 [resultsArray addObject:frameDict];
                 
                 CGImageRelease(cgImage);
+                frame_count++;
+                if (show_progress && (frame_count % progress_step == 0 || frame_count == total_frames)) {
+                    int percent = (int)((float)frame_count / total_frames * 100);
+                    NSLog(@"Progress: %d/%d (約 %d%%)", frame_count, total_frames, percent);
+                }
             }
         }
         
