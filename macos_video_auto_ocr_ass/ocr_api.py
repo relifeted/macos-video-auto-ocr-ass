@@ -6,7 +6,7 @@ import uuid
 from typing import Optional
 
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, File, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from transformers import MarianMTModel, MarianTokenizer
@@ -285,6 +285,17 @@ async def translate_line(req: TranslateLineRequest):
         return {"translated": tgt_text}
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.post("/upload_video")
+async def upload_video(file: UploadFile = File(...)):
+    import shutil
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        tmp_path = tmp.name
+        with open(tmp_path, "wb") as out_file:
+            shutil.copyfileobj(file.file, out_file)
+    return {"video_path": tmp_path}
 
 
 if __name__ == "__main__":

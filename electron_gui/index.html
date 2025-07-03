@@ -127,6 +127,7 @@
       font-size: 0.95rem;
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/assjs@0.11.0/dist/ass.min.js"></script>
 </head>
 <body>
   <div id="app">
@@ -185,6 +186,7 @@
     <!-- 4. 辨識完成 -->
     <div id="resultSection" class="section" style="display:none;">
       <video id="resultVideoPlayer" controls></video>
+      <div id="assContainer" style="width:100%;height:320px;position:relative;"></div>
       <div>
         <h3>字幕編輯</h3>
         <textarea id="assEditor" rows="12"></textarea>
@@ -203,29 +205,262 @@
     </div>
   </div>
   <script>
-    // 這裡預留 UI 切換與事件邏輯，API 串接後續補上
-    document.getElementById('selectVideoBtn').onclick = function() {
-      document.getElementById('welcome').style.display = 'none';
-      document.getElementById('videoSection').style.display = '';
+    // 影片檔案路徑暫存
+    let selectedVideoPath = null;
+    // 選擇影片（用 Electron dialog 或 input file）
+    document.getElementById('selectVideoBtn').onclick = async function() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'video/*';
+      input.onchange = async e => {
+        if (input.files.length) {
+          const file = input.files[0];
+          const url = URL.createObjectURL(file);
+          document.getElementById('videoPlayer').src = url;
+          document.getElementById('welcome').style.display = 'none';
+          document.getElementById('videoSection').style.display = '';
+          // 檔案上傳
+          const formData = new FormData();
+          formData.append('file', file);
+          try {
+            const resp = await fetch('http://localhost:5001/upload_video', {
+              method: 'POST',
+              body: formData
+            });
+            const data = await resp.json();
+            if (!data.video_path) throw new Error(data.error || '上傳失敗');
+            selectedVideoPath = data.video_path;
+          } catch (e) {
+            alert('影片上傳失敗：' + e);
+            document.getElementById('videoSection').style.display = 'none';
+            document.getElementById('welcome').style.display = '';
+          }
+        }
+      };
+      input.click();
     };
-    document.getElementById('startOcrBtn').onclick = function() {
+
+    // 開始辨識字幕
+    document.getElementById('startOcrBtn').onclick = async function() {
+      if (!selectedVideoPath) {
+        alert('請先選擇影片');
+        return;
+      }
+      // 取得參數
+      const interval = parseFloat(document.getElementById('interval').value);
+      const languages = document.getElementById('languages').value;
+      const downscale = parseInt(document.getElementById('downscale').value);
+      const baseFontSize = parseInt(document.getElementById('baseFontSize').value);
+      // 合併參數暫存（辨識完自動合併）
+      const positionTolerance = parseInt(document.getElementById('positionTolerance').value);
+      const timeGapThreshold = parseInt(document.getElementById('timeGapThreshold').value);
+
       document.getElementById('videoSection').style.display = 'none';
       document.getElementById('progressSection').style.display = '';
-      // 模擬進度
-      let p = 0;
-      const prog = document.getElementById('ocrProgress');
-      const text = document.getElementById('progressText');
-      const timer = setInterval(() => {
-        p += 10;
-        prog.value = p;
-        text.innerText = p + '%';
-        if (p >= 100) {
-          clearInterval(timer);
-          document.getElementById('progressSection').style.display = 'none';
-          document.getElementById('resultSection').style.display = '';
-        }
-      }, 200);
+      document.getElementById('ocrProgress').value = 0;
+      document.getElementById('progressText').innerText = '0%';
+
+      // 呼叫 API 啟動 OCR 任務
+      let taskId = null;
+      try {
+        const resp = await fetch('http://localhost:5001/start_ocr_ass_objc', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            video_path: selectedVideoPath,
+            interval,
+            languages,
+            downscale,
+            base_font_size: baseFontSize,
+            quiet: true
+          })
+        });
+        const data = await resp.json();
+        if (!data.task_id) throw new Error(data.error || '啟動任務失敗');
+        taskId = data.task_id;
+      } catch (e) {
+        alert('啟動字幕辨識失敗：' + e);
+        document.getElementById('progressSection').style.display = 'none';
+        document.getElementById('videoSection').style.display = '';
+        return;
+      }
+
+      // 輪詢進度
+      let timer = null;
+      function pollProgress() {
+        fetch(`http://localhost:5001/ocr_progress?task_id=${taskId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.status === 'error') {
+              alert('辨識失敗：' + (data.error || '未知錯誤'));
+              document.getElementById('progressSection').style.display = 'none';
+              document.getElementById('videoSection').style.display = '';
+              clearTimeout(timer);
+              return;
+            }
+            document.getElementById('ocrProgress').value = data.progress;
+            document.getElementById('progressText').innerText = data.progress + '%';
+            if (data.status === 'done') {
+              clearTimeout(timer);
+              // 自動呼叫合併字幕 API
+              mergeAss(data.ass, positionTolerance, timeGapThreshold, baseFontSize);
+            } else {
+              timer = setTimeout(pollProgress, 1000);
+            }
+          })
+          .catch(err => {
+            document.getElementById('progressText').innerText = '查詢進度失敗';
+            timer = setTimeout(pollProgress, 2000);
+          });
+      }
+      pollProgress();
     };
+
+    // ASS 字幕同步播放
+    let assInstance = null;
+    function loadAssToPlayer() {
+      if (assInstance) {
+        assInstance.destroy();
+        assInstance = null;
+      }
+      const assText = document.getElementById('assEditor').value;
+      const video = document.getElementById('resultVideoPlayer');
+      const container = document.getElementById('assContainer');
+      if (!assText.trim()) return;
+      assInstance = new ASS(assText, video, {
+        container: container,
+        resampling: 'video',
+        blend: true,
+        fonts: [],
+        useWorker: false,
+        subUrl: undefined,
+        debug: false
+      });
+    }
+    // 每次字幕內容變動時，重載字幕
+    document.getElementById('assEditor').addEventListener('input', loadAssToPlayer);
+    // 每次進入結果區時載入字幕
+    function showResultSection() {
+      document.getElementById('progressSection').style.display = 'none';
+      document.getElementById('resultSection').style.display = '';
+      document.getElementById('assEditor').focus();
+      setTimeout(() => {
+        loadAssToPlayer();
+        renderLineTranslateArea();
+      }, 100);
+    }
+    // 修改 mergeAss 完成後的顯示方式
+    async function mergeAss(assContent, positionTolerance, timeGapThreshold, baseFontSize) {
+      try {
+        const resp = await fetch('http://localhost:5001/merge_ass', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ass_content: assContent,
+            position_tolerance: positionTolerance,
+            time_gap_threshold: timeGapThreshold,
+            base_font_size: baseFontSize
+          })
+        });
+        const data = await resp.json();
+        if (!data.ass) throw new Error(data.error || '合併字幕失敗');
+        // 顯示結果區
+        document.getElementById('assEditor').value = data.ass;
+        document.getElementById('resultVideoPlayer').src = document.getElementById('videoPlayer').src;
+        showResultSection();
+      } catch (e) {
+        alert('合併字幕失敗：' + e);
+        document.getElementById('progressSection').style.display = 'none';
+        document.getElementById('videoSection').style.display = '';
+      }
+    }
+
+    // 儲存字幕（下載 ASS 檔案）
+    document.getElementById('saveAssBtn').onclick = function() {
+      const content = document.getElementById('assEditor').value;
+      const blob = new Blob([content], {type: 'text/plain'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'output.ass';
+      a.click();
+    };
+
+    // 整句翻譯
+    document.getElementById('translateAssBtn').onclick = async function() {
+      const assContent = document.getElementById('assEditor').value;
+      const srcLang = prompt('請輸入來源語言（如 en, ja, zh）', 'en') || 'en';
+      const tgtLang = prompt('請輸入目標語言（如 zh, ja, en）', 'zh') || 'zh';
+      try {
+        const resp = await fetch('http://localhost:5001/translate_ass', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ass_content: assContent,
+            src_lang: srcLang,
+            tgt_lang: tgtLang,
+            device: 'cpu',
+            show_text: false
+          })
+        });
+        const data = await resp.json();
+        if (!data.ass) throw new Error(data.error || '翻譯失敗');
+        document.getElementById('assEditor').value = data.ass;
+        alert('翻譯完成！');
+        renderLineTranslateArea();
+      } catch (e) {
+        alert('整句翻譯失敗：' + e);
+      }
+    };
+
+    // 逐句翻譯區渲染
+    function renderLineTranslateArea() {
+      const area = document.getElementById('lineTranslateArea');
+      area.innerHTML = '';
+      const assLines = document.getElementById('assEditor').value.split('\n');
+      assLines.forEach((line, idx) => {
+        if (!line.trim().startsWith('Dialogue:')) return;
+        const text = line.split(',').slice(9).join(',').trim();
+        const div = document.createElement('div');
+        div.className = 'subtitle-line';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = text;
+        input.readOnly = true;
+        const btn = document.createElement('button');
+        btn.innerText = '翻譯';
+        const result = document.createElement('span');
+        btn.onclick = async function() {
+          btn.disabled = true;
+          btn.innerText = '翻譯中...';
+          try {
+            const srcLang = prompt('來源語言', 'en') || 'en';
+            const tgtLang = prompt('目標語言', 'zh') || 'zh';
+            const resp = await fetch('http://localhost:5001/translate_line', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text, src_lang: srcLang, tgt_lang: tgtLang })
+            });
+            const data = await resp.json();
+            if (!data.translated) throw new Error(data.error || '翻譯失敗');
+            result.innerText = data.translated;
+          } catch (e) {
+            result.innerText = '翻譯失敗';
+          } finally {
+            btn.disabled = false;
+            btn.innerText = '翻譯';
+          }
+        };
+        div.appendChild(input);
+        div.appendChild(btn);
+        div.appendChild(result);
+        area.appendChild(div);
+      });
+    }
+
+    // 每次字幕內容變動時，重繪逐句翻譯區
+    document.getElementById('assEditor').addEventListener('input', renderLineTranslateArea);
+    // 初次顯示時也要渲染
+    document.getElementById('resultSection').addEventListener('show', renderLineTranslateArea);
   </script>
 </body>
 </html> 

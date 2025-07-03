@@ -8,7 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
 pysubs2 = "1.8.0"
-pyobjc = "11.1"
+pyobjc = "^11.1"
 pillow = "11.2.1"
 tqdm = "4.67.1"
 sentencepiece = "0.2.0"
@@ -23,6 +23,7 @@ langdetect = "1.0.9"
 sacremoses = "0.1.1"
 fastapi = "0.115.14"
 uvicorn = "0.35.0"
+python-multipart = "0.0.20"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "7.4.0"
