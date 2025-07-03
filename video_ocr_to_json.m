@@ -55,6 +55,12 @@ int main(int argc, const char * argv[]) {
             return 1;
         }
         
+        // Debug: 印出所有收到的參數
+        printf("[DEBUG] argc = %d\n", argc);
+        for (int i = 0; i < argc; i++) {
+            printf("[DEBUG] argv[%d] = %s\n", i, argv[i]);
+        }
+        
         // 解析參數
         NSString *videoPath = @(argv[1]);
         NSString *outputPath = @(argv[2]);
@@ -88,6 +94,18 @@ int main(int argc, const char * argv[]) {
         float end_time = (argc > 8) ? atof(argv[8]) : -1.0;
         int show_progress = (argc > 9) ? atoi(argv[9]) : 0;
         
+        // 新增：解析 start_frame, end_frame 參數
+        int start_frame = 0;
+        int end_frame = -1; // -1 代表到最後
+        if (argc > 7) {
+            start_frame = atoi(argv[7]);
+        }
+        if (argc > 8) {
+            end_frame = atoi(argv[8]);
+        }
+        printf("[DEBUG] start_frame = %d\n", start_frame);
+        printf("[DEBUG] end_frame = %d\n", end_frame);
+        
         NSURL *url = [NSURL fileURLWithPath:videoPath];
         AVAsset *asset = [AVAsset assetWithURL:url];
         CMTime duration = asset.duration;
@@ -110,36 +128,95 @@ int main(int argc, const char * argv[]) {
         if (progress_step < 1) progress_step = 1;
         int frame_count = 0;
         
-        AVAssetImageGenerator *generator = [[AVAssetImageGenerator alloc] initWithAsset:asset];
-        generator.appliesPreferredTrackTransform = YES;
-        
+        int numFrames = (int)ceil(durationSeconds / interval);
+        if (end_frame < 0 || end_frame > numFrames) end_frame = numFrames;
+        int framesPerChunk = 1000; // 這行可保留或移除，分段已交由外部控制
         NSMutableArray *resultsArray = [NSMutableArray array];
         
         for (float t = start_time; t < end_time; t += interval) {
             @autoreleasepool {
-                CMTime time = CMTimeMakeWithSeconds(t, 600);
-                NSError *error = nil;
-                CGImageRef cgImage = [generator copyCGImageAtTime:time actualTime:nil error:&error];
-                if (error || !cgImage) {
-                    NSLog(@"Failed to extract frame at %.2fs: %@", t, error);
-                    continue;
-                }
-                
-                // 如果需要，進行裁剪
-                CGImageRef processedImage = cgImage;
-                if (!CGRectIsNull(scanRect)) {
-                    processedImage = cropImage(cgImage, scanRect);
-                    CGImageRelease(cgImage);
-                    cgImage = processedImage;
-                }
-                
-                // 如果需要，進行縮放
-                if (downscale > 1) {
-                    processedImage = createDownscaledImage(cgImage, downscale);
-                    if (cgImage != [generator copyCGImageAtTime:time actualTime:nil error:&error]) {
+                AVAsset *asset = [AVAsset assetWithURL:url];
+                AVAssetImageGenerator *generator = [[AVAssetImageGenerator alloc] initWithAsset:asset];
+                generator.appliesPreferredTrackTransform = YES;
+                int chunkEnd = (chunkStart + framesPerChunk < end_frame) ? (chunkStart + framesPerChunk) : (end_frame + 1);
+                for (int i = chunkStart; i < chunkEnd; i++) {
+                    @autoreleasepool {
+                        float t = i * interval;
+                        if (t > durationSeconds) t = durationSeconds;
+                        CMTime time = CMTimeMakeWithSeconds(t, 600);
+                        NSError *error = nil;
+                        CGImageRef cgImage = [generator copyCGImageAtTime:time actualTime:nil error:&error];
+                        if (error || !cgImage) {
+                            NSLog(@"Failed to extract frame at %.2fs: %@", t, error);
+                            continue;
+                        }
+                        
+                        // 如果需要，進行裁剪
+                        CGImageRef processedImage = cgImage;
+                        if (!CGRectIsNull(scanRect)) {
+                            processedImage = cropImage(cgImage, scanRect);
+                            CGImageRelease(cgImage);
+                            cgImage = processedImage;
+                        }
+                        
+                        // 如果需要，進行縮放
+                        if (downscale > 1) {
+                            processedImage = createDownscaledImage(cgImage, downscale);
+                            if (cgImage != [generator copyCGImageAtTime:time actualTime:nil error:&error]) {
+                                CGImageRelease(cgImage);
+                            }
+                            cgImage = processedImage;
+                        }
+                        
+                        VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] initWithCompletionHandler:nil];
+                        request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
+                        request.automaticallyDetectsLanguage = (languages == nil);
+                        
+                        // 設定語言（如果指定了）
+                        if (languages) {
+                            [request setRecognitionLanguages:languages];
+                        }
+                        
+                        // 印出進度
+                        printf("Progress: %d - %.1f%% (%.2fs / %.2fs)\n", i, t / durationSeconds * 100.0, t, durationSeconds);
+                        fflush(stdout);
+                        
+                        VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:cgImage options:@{}];
+                        NSError *ocrError = nil;
+                        [handler performRequests:@[request] error:&ocrError];
+                        
+                        NSMutableArray *frameResults = [NSMutableArray array];
+                        if (!ocrError) {
+                            for (VNRecognizedTextObservation *obs in request.results) {
+                                VNRecognizedText *top = [[obs topCandidates:1] firstObject];
+                                if (top) {
+                                    CGRect bbox = obs.boundingBox;
+                                    // 如果使用了掃描區域，需要調整座標回到原始影片座標系統
+                                    if (!CGRectIsNull(scanRect)) {
+                                        bbox = CGRectMake(
+                                            scanRect.origin.x + bbox.origin.x * scanRect.size.width,
+                                            scanRect.origin.y + bbox.origin.y * scanRect.size.height,
+                                            bbox.size.width * scanRect.size.width,
+                                            bbox.size.height * scanRect.size.height
+                                        );
+                                    }
+                                    NSDictionary *item = @{
+                                        @"text": top.string ?: @"",
+                                        @"bbox": @[@(bbox.origin.x), @(bbox.origin.y), @(bbox.size.width), @(bbox.size.height)]
+                                    };
+                                    [frameResults addObject:item];
+                                }
+                            }
+                        }
+                        
+                        NSDictionary *frameDict = @{
+                            @"timestamp": @(t),
+                            @"results": frameResults
+                        };
+                        [resultsArray addObject:frameDict];
+                        
                         CGImageRelease(cgImage);
                     }
-                    cgImage = processedImage;
                 }
                 
                 VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] initWithCompletionHandler:nil];
