@@ -215,55 +215,43 @@ def main():
         return
 
     subs = pysubs2.load(args.input_ass)
-    groups = group_by_time(subs)
     new_lines = []
 
-    for (start, end), lines in tqdm(groups.items(), desc="Translating"):
-        texts, tags_list = [], []
-        for line in lines:
-            text, tags = extract_text_and_tags(line.text)
-            texts.append(text.strip())
-            tags_list.append(tags)
-        merged_text = " ".join(texts)
-
+    for line in tqdm(subs, desc="Translating"):
+        text, tags = extract_text_and_tags(line.text)
+        text = text.strip()
         # 使用 langdetect 偵測語言
-        detected_lang = detect_lang(merged_text)
+        detected_lang = detect_lang(text)
         if detected_lang and detected_lang != args.src_lang:
-            # 非 src-lang，全部保留原文
-            for i, line in enumerate(lines):
-                new_line = line.copy()
-                new_line.text = restore_tags(texts[i], tags_list[i])
-                new_lines.append(new_line)
+            # 非 src-lang，保留原文
+            new_line = line.copy()
+            new_line.text = restore_tags(text, tags)
+            new_lines.append(new_line)
             continue
 
         # 檢查文本長度並記錄
-        if len(merged_text) > 450:
-            print(f"[INFO] 文本長度 {len(merged_text)} 超過450，將進行自動斷句處理")
+        if len(text) > 450:
+            print(f"[INFO] 文本長度 {len(text)} 超過450，將進行自動斷句處理")
 
         try:
-            translated = translate_with_loaded_models(
-                merged_text, translators, need_opencc
-            )
+            translated = translate_with_loaded_models(text, translators, need_opencc)
         except RuntimeError as e:
             print(f"[ERROR] 翻譯失敗: {e}")
-            translated = merged_text  # fallback: 不翻譯
+            translated = text  # fallback: 不翻譯
         except Exception as e:
             print(f"[ERROR] 翻譯過程中發生未預期錯誤: {e}")
-            translated = merged_text  # fallback: 不翻譯
+            translated = text  # fallback: 不翻譯
 
         if args.show_text:
             print("--- 原文 ---")
-            print(merged_text)
+            print(text)
             print("--- 譯文 ---")
             print(translated)
             print()
-        translated_lines = translated.split(" ")
-        for i, line in enumerate(lines):
-            if i == 0:
-                line.text = restore_tags(" ".join(translated_lines), tags_list[i])
-            else:
-                line.text = restore_tags("", tags_list[i])
-            new_lines.append(line)
+
+        new_line = line.copy()
+        new_line.text = restore_tags(translated, tags)
+        new_lines.append(new_line)
 
     new_lines.sort(key=lambda l: (l.start, l.end))
     subs.events = new_lines
