@@ -8,6 +8,7 @@ import json
 import math
 import multiprocessing
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -164,36 +165,46 @@ def add_ocr_to_subs(
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=text))
 
 
-def merge_continuous_events(subs, position_tolerance=10, time_gap_threshold=500):
-    """合併連續的相同文字事件"""
-    if not subs.events:
-        return
+def parse_pos(text):
+    match = re.search(r"\\pos\((\d+),(\d+)\)", text)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    return None, None
 
-    # 按時間排序
-    subs.events.sort(key=lambda x: x.start)
 
+def merge_ass_events(
+    subs,
+    position_tolerance=10,
+    time_gap_threshold=500,
+    base_font_size=24,
+):
     merged_events = []
-    current_event = subs.events[0].copy()
-
-    for next_event in subs.events[1:]:
-        # 檢查是否為相同文字且時間連續
-        if (
-            current_event.text == next_event.text
-            and current_event.end >= next_event.start - time_gap_threshold
-        ):  # 允許指定間隙
-            # 延長當前事件的結束時間
-            current_event.end = max(current_event.end, next_event.end)
+    events = sorted(subs.events, key=lambda e: (e.text))
+    if not events:
+        return 0
+    current = events[0]
+    for next_event in events[1:]:
+        cur_pos = parse_pos(current.text)
+        next_pos = parse_pos(next_event.text)
+        cur_text = current.text
+        next_text = next_event.text
+        pos_close = (
+            cur_pos[0] is not None
+            and next_pos[0] is not None
+            and abs(cur_pos[0] - next_pos[0]) <= position_tolerance
+            and abs(cur_pos[1] - next_pos[1]) <= position_tolerance
+        )
+        text_same = cur_text == next_text
+        time_overlap_or_close = next_event.start <= current.end + time_gap_threshold
+        if pos_close and text_same and time_overlap_or_close:
+            current.end = max(current.end, next_event.end)
         else:
-            # 添加當前事件並開始新事件
-            merged_events.append(current_event)
-            current_event = next_event.copy()
-
-    # 添加最後一個事件
-    merged_events.append(current_event)
-
-    # 更新字幕檔案的事件
+            merged_events.append(current)
+            current = next_event
+    merged_events.append(current)
     subs.events = merged_events
-    return len(subs.events)
+    subs.sort()
+    return len(merged_events)
 
 
 def get_video_duration(video_path):
@@ -323,11 +334,12 @@ def main(
     # 合併連續事件
     if merge_events:
         if not quiet:
-            print("[INFO] Merging continuous events...")
-        num_events = merge_continuous_events(
+            print("[INFO] Merging continuous events (pos+text+time)...")
+        num_events = merge_ass_events(
             subs,
             position_tolerance=position_tolerance,
             time_gap_threshold=time_gap_threshold,
+            base_font_size=base_font_size,
         )
         if not quiet:
             print(f"[INFO] Final number of events: {num_events}")
