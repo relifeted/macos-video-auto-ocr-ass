@@ -220,8 +220,23 @@ def main():
     for line in tqdm(subs, desc="Translating"):
         text, tags = extract_text_and_tags(line.text)
         text = text.strip()
-        # 使用 langdetect 偵測語言
         detected_lang = detect_lang(text)
+
+        # 判斷是否為 zh 相關的 opencc 處理
+        src_is_zh = args.src_lang.lower() in ["zh", "zhs", "zht"]
+        tgt_is_zh = args.tgt_lang.lower() in ["zh", "zhs", "zht"]
+        if src_is_zh and tgt_is_zh:
+            # 只做 opencc 處理，不做翻譯
+            if args.tgt_lang.lower() in ["zht", "zh"] and opencc is not None:
+                converted = opencc.convert(text)
+            else:
+                converted = text
+            new_line = line.copy()
+            new_line.text = restore_tags(converted, tags)
+            new_lines.append(new_line)
+            continue
+
+        # 使用 langdetect 偵測語言
         if detected_lang and detected_lang != args.src_lang:
             # 非 src-lang，保留原文
             new_line = line.copy()
