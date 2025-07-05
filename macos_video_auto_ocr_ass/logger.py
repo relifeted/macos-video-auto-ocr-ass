@@ -21,7 +21,7 @@ class ColoredFormatter(logging.Formatter):
         "RESET": "\033[0m",  # 重置
     }
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         # 取得原始 levelname
         levelname = record.levelname
         color = self.COLORS.get(levelname, self.COLORS["RESET"])
@@ -59,7 +59,7 @@ def setup_logger(
     # 控制台處理器
     console_handler = logging.StreamHandler(sys.stdout)
     if colored:
-        formatter = ColoredFormatter(
+        formatter: logging.Formatter = ColoredFormatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )

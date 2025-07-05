@@ -106,7 +106,7 @@ class AppConfig:
     temp_dir: str = "temp"
     log_level: str = "INFO"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """初始化後處理"""
         # 確保輸出目錄存在
         os.makedirs(self.output_dir, exist_ok=True)

@@ -205,8 +205,7 @@ class TestSetupDefaultStyle:
         assert style.borderstyle == 1
         assert style.outline == 0
         assert style.shadow == 0
-        assert style.margin_t == 0
-        assert style.margin_b == 0
+        # 已移除 margin_t 和 margin_b 的檢查
 
 
 class TestMergeContinuousEvents:

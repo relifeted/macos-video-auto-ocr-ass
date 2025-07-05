@@ -83,15 +83,13 @@ def setup_default_style(subs: pysubs2.SSAFile) -> None:
         subs: ASS 字幕檔案
     """
     default_style = pysubs2.SSAStyle()
-    default_style.alignment = 5  # 中心對齊
+    default_style.alignment = pysubs2.Alignment.MIDDLE_CENTER  # 中心對齊
     default_style.marginl = 0
     default_style.marginr = 0
     default_style.marginv = 0
     default_style.borderstyle = 1
     default_style.outline = 0
     default_style.shadow = 0
-    default_style.margin_t = 0
-    default_style.margin_b = 0
     subs.styles["Default"] = default_style
 
 
@@ -172,6 +170,8 @@ def merge_ass_subs_advanced(
         pos_close = (
             cur_pos[0] is not None
             and next_pos[0] is not None
+            and cur_pos[1] is not None
+            and next_pos[1] is not None
             and abs(cur_pos[0] - next_pos[0]) <= position_tolerance
             and abs(cur_pos[1] - next_pos[1]) <= position_tolerance
         )
