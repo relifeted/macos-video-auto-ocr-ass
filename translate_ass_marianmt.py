@@ -204,15 +204,24 @@ def main():
     elif args.tgt_lang.lower() == "zhs":
         need_opencc = False
 
-    # 預先載入翻譯模型
-    print("載入翻譯模型中...")
-    try:
-        translators, tgt_lang_for_model, use_pivot = load_translators(
-            args.src_lang, args.tgt_lang, args.device
-        )
-    except RuntimeError as e:
-        print(f"[ERROR] {e}")
-        return
+    # 判斷是否為 zh 相關的 opencc 處理
+    src_is_zh = args.src_lang.lower() in ["zh", "zhs", "zht"]
+    tgt_is_zh = args.tgt_lang.lower() in ["zh", "zhs", "zht"]
+    zh_only_mode = src_is_zh and tgt_is_zh
+
+    # 預先載入翻譯模型（僅在非 zh-only 模式時）
+    if not zh_only_mode:
+        print("載入翻譯模型中...")
+        try:
+            translators, tgt_lang_for_model, use_pivot = load_translators(
+                args.src_lang, args.tgt_lang, args.device
+            )
+        except RuntimeError as e:
+            print(f"[ERROR] {e}")
+            return
+    else:
+        print("zh 相關語言模式，跳過翻譯模型載入")
+        translators = None
 
     subs = pysubs2.load(args.input_ass)
     new_lines = []
