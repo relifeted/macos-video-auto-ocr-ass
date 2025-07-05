@@ -440,10 +440,9 @@ class TestOCRImage:
             assert results[0][0] == "Hello"
             assert results[1][0] == "World"
 
-    def test_ocr_image_with_languages(self):
+    def test_ocr_image_with_languages(self, sample_image):
         """測試帶語言設定的 OCR"""
-        test_image = Image.new("RGB", (100, 50), color="white")
-
+        test_image = sample_image
         with (
             patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
             patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ciimage,
@@ -472,12 +471,8 @@ class TestOCRImage:
 
             mock_handler.performRequests_error_ = mock_perform_requests
             mock_request.results.return_value = []
-
-            # 測試語言設定
             languages = ["en", "zh"]
             ocr_image(test_image, recognition_languages=languages, quiet=True)
-
-            # 檢查是否設定了語言
             mock_request.setRecognitionLanguages_.assert_called_once_with(languages)
 
     def test_ocr_image_empty_results(self):
@@ -620,24 +615,27 @@ class TestExtractFramesDebug:
         sys.modules["macos_video_auto_ocr_ass.video_utils"].cgimage_to_pil = Mock(
             return_value=Image.new("RGB", (100, 50))
         )
-        printed = []
+        logged_messages = []
+
+        def mock_logger_debug(*args, **kwargs):
+            logged_messages.append(args)
+
         monkeypatch.setattr(
-            builtins, "print", lambda *args, **kwargs: printed.append(args)
+            "macos_video_auto_ocr_ass.video_utils.logger.debug", mock_logger_debug
         )
+
         frames = list(extract_frames("/path/to/video.mp4", interval=1.0, quiet=False))
-        # 應該有 print debug 訊息
-        assert any("DEBUG" in str(x) for args in printed for x in args)
         assert len(frames) == 2
+        # 應該有 debug 輸出
+        assert len(logged_messages) > 0
 
 
 # 將此測試移出類別，改為 pytest function
 
 
-def test_ocr_image_handler_block_error(monkeypatch):
+def test_ocr_image_handler_block_error(monkeypatch, sample_image):
     # mock Vision 相關
     import sys
-
-    from PIL import Image
 
     from macos_video_auto_ocr_ass.video_utils import ocr_image
 
@@ -674,7 +672,7 @@ def test_ocr_image_handler_block_error(monkeypatch):
     mock_handler.performRequests_error_ = perform_requests
     mock_request.results.return_value = []
     # 測試
-    img = Image.new("RGB", (100, 50))
+    img = sample_image
     results = ocr_image(img, quiet=True)
     assert results == []
 

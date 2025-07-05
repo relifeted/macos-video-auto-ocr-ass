@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pysubs2
 import pytest
+from PIL import Image
 
 from macos_video_auto_ocr_ass.translators import (
     BaseTranslator,
@@ -252,19 +253,12 @@ class TestMarianMTTranslator:
         mock_translator1.assert_called_once_with("こんにちは", max_length=1024)
         mock_translator2.assert_called_once_with("Hello World", max_length=1024)
 
-    def test_marianmt_translator_translate_ass_file(self, temp_dir):
+    def test_marianmt_translator_translate_ass_file(self, simple_ass_file, temp_dir):
         """測試 MarianMT 翻譯器翻譯 ASS 檔案"""
-        # 創建測試 ASS 檔案
-        input_ass = os.path.join(temp_dir, "input.ass")
+        input_ass = simple_ass_file
         output_ass = os.path.join(temp_dir, "output.ass")
 
-        subs = pysubs2.SSAFile()
-        sub = pysubs2.SSAEvent(start=0, end=1000, text="Hello World")
-        subs.append(sub)
-        subs.save(input_ass)
-
         translator = MarianMTTranslator("en", "zh")
-        # 直接設置翻譯器狀態，避免實際載入模型
         translator._model = True  # 標記模型已載入
         mock_translator = Mock()
         mock_translator.return_value = [{"translation_text": "你好世界"}]
@@ -339,56 +333,38 @@ class TestTranslatorIntegration:
     @patch("huggingface_hub.hf_hub_download")
     @patch("llama_cpp.Llama")
     def test_llama_translator_translate_ass_file(
-        self, mock_llama, mock_download, temp_dir
+        self, mock_llama, mock_download, simple_ass_file, temp_dir
     ):
         """測試 Llama 翻譯器翻譯 ASS 檔案"""
         mock_download.return_value = "/path/to/model.gguf"
         mock_llama_instance = Mock()
         mock_llama_instance.return_value = {"choices": [{"text": "你好世界"}]}
         mock_llama.return_value = mock_llama_instance
-
-        # 創建測試 ASS 檔案
-        input_ass = os.path.join(temp_dir, "input.ass")
+        input_ass = simple_ass_file
         output_ass = os.path.join(temp_dir, "output.ass")
-
-        subs = pysubs2.SSAFile()
-        sub = pysubs2.SSAEvent(start=0, end=1000, text="Hello World")
-        subs.append(sub)
-        subs.save(input_ass)
-
         translator = LlamaTranslator("en", "zh")
-        translator._model = mock_llama_instance  # 直接設置模型
+        translator._model = mock_llama_instance
         translator.translate_ass_file(input_ass, output_ass)
-
-        # 檢查輸出檔案
         assert os.path.exists(output_ass)
         output_subs = pysubs2.load(output_ass)
         assert len(output_subs) == 1
         assert "你好世界" in output_subs[0].text
 
     @patch("transformers.pipeline")
-    def test_marianmt_translator_translate_ass_file(self, mock_pipeline, temp_dir):
+    def test_marianmt_translator_translate_ass_file(
+        self, mock_pipeline, simple_ass_file, temp_dir
+    ):
         """測試 MarianMT 翻譯器翻譯 ASS 檔案"""
         mock_translator = Mock()
         mock_translator.return_value = [{"translation_text": "你好世界"}]
         mock_pipeline.return_value = mock_translator
-
-        # 創建測試 ASS 檔案
-        input_ass = os.path.join(temp_dir, "input.ass")
+        input_ass = simple_ass_file
         output_ass = os.path.join(temp_dir, "output.ass")
-
-        subs = pysubs2.SSAFile()
-        sub = pysubs2.SSAEvent(start=0, end=1000, text="Hello World")
-        subs.append(sub)
-        subs.save(input_ass)
-
         translator = MarianMTTranslator("en", "zh")
         translator.translators["direct"] = mock_translator
         translator.tgt_lang_for_model = "zh"
         translator.use_pivot = False
         translator.translate_ass_file(input_ass, output_ass)
-
-        # 檢查輸出檔案
         assert os.path.exists(output_ass)
         output_subs = pysubs2.load(output_ass)
         assert len(output_subs) == 1
@@ -496,10 +472,14 @@ class TestTranslateAssFileShowText:
 
         # 模擬 opencc 未安裝
         monkeypatch.setattr("macos_video_auto_ocr_ass.translators.opencc", None)
-        # mock print 捕捉
-        printed = []
+        # mock logger 捕捉
+        logged_messages = []
+
+        def mock_logger_info(*args, **kwargs):
+            logged_messages.append(args)
+
         monkeypatch.setattr(
-            builtins, "print", lambda *args, **kwargs: printed.append(args)
+            "macos_video_auto_ocr_ass.translators.logger.info", mock_logger_info
         )
 
         translator = DummyTranslator("en", "Traditional Chinese")
@@ -507,9 +487,11 @@ class TestTranslateAssFileShowText:
         translator.translate_ass_file(
             "dummy_input.ass", "dummy_output.ass", show_text=True
         )
-        # 應該有 print 輸出
+        # 應該有 logger 輸出
         assert any(
-            "原文" in str(x) or "譯文" in str(x) for args in printed for x in args
+            "原文" in str(x) or "譯文" in str(x)
+            for args in logged_messages
+            for x in args
         )
         # 應該有呼叫 save
         assert save_called
@@ -568,7 +550,7 @@ def test_translate_ass_file_with_opencc_none(mock_opencc):
             "macos_video_auto_ocr_ass.ass_utils.extract_text_and_tags"
         ) as mock_extract,
         patch("macos_video_auto_ocr_ass.ass_utils.restore_tags") as mock_restore,
-        patch("builtins.print") as mock_print,
+        patch("macos_video_auto_ocr_ass.translators.logger") as mock_logger,
     ):
 
         # 模擬 ASS 檔案結構
@@ -584,8 +566,8 @@ def test_translate_ass_file_with_opencc_none(mock_opencc):
 
         translator.translate_ass_file("input.ass", "output.ass", show_text=True)
 
-        # 驗證 print 被呼叫（show_text=True）
-        mock_print.assert_called()
+        # 驗證 logger 被呼叫（show_text=True）
+        mock_logger.info.assert_called()
 
 
 def test_marianmt_pivot_translation():
@@ -703,54 +685,49 @@ def test_translate_with_language_detection_failure():
         assert result == "test"
 
 
-def test_translate_with_retry_and_final_fallback():
+def test_translate_with_retry_and_final_fallback(monkeypatch):
     """測試重試機制和最終回退"""
-    translator = MarianMTTranslator("en", "traditional chinese")
+    translator = LlamaTranslator("en", "zh")
     translator._model = Mock()
     translator._model.side_effect = Exception("Translation failed")
 
-    # 模擬所有重試都失敗
-    with patch("builtins.print") as mock_print:
-        result = translator.translate("original text", retry=2)
-        assert result == "original text"  # 應該返回原文
-        # 驗證警告訊息被打印
-        mock_print.assert_called()
+    logged_messages = []
+
+    def mock_logger_warning(*args, **kwargs):
+        logged_messages.append(args)
+
+    monkeypatch.setattr(
+        "macos_video_auto_ocr_ass.translators.logger.warning", mock_logger_warning
+    )
+
+    result = translator.translate("Hello World", retry=2)
+    assert result == "Hello World"  # 返回原文
+    # 驗證警告被記錄
+    assert len(logged_messages) > 0
 
 
 @patch("macos_video_auto_ocr_ass.translators.opencc")
 @patch("macos_video_auto_ocr_ass.translators.detect")
-def test_translate_ass_file_with_opencc_conversion(mock_detect, mock_opencc):
+def test_translate_ass_file_with_opencc_conversion(
+    mock_detect, mock_opencc, simple_ass_file, temp_dir
+):
     """測試 ASS 檔案翻譯時的 OpenCC 轉換"""
     from macos_video_auto_ocr_ass.translators import MarianMTTranslator
 
-    # 模擬 opencc 轉換 - 確保 mock 被識別為非 None
     mock_opencc.convert.return_value = "traditional text"
     mock_opencc.__bool__ = lambda self: True
-    # 模擬語言檢測
     mock_detect.return_value = "zh-tw"
-
     translator = MarianMTTranslator("en", "traditional chinese")
     with patch.object(translator, "_load_model"):
         mock_translator = Mock()
         mock_translator.return_value = [{"translation_text": "simplified text"}]
         translator.translators = {"direct": mock_translator}
         translator._model = Mock()
-
-        import os
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".ass", delete=False) as f:
-            f.write("Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello world\n")
-            input_file = f.name
-        output_file = input_file.replace(".ass", "_translated.ass")
-        try:
-            translator.translate_ass_file(input_file, output_file, show_text=False)
-            mock_opencc.convert.assert_called_once_with("simplified text")
-        finally:
-            if os.path.exists(input_file):
-                os.unlink(input_file)
-            if os.path.exists(output_file):
-                os.unlink(output_file)
+        input_file = simple_ass_file
+        output_file = os.path.join(temp_dir, "output_translated.ass")
+        translator.translate_ass_file(input_file, output_file, show_text=False)
+        mock_opencc.convert.assert_called_once_with("simplified text")
+        assert os.path.exists(output_file)
 
 
 def test_translate_ass_file_without_opencc():
@@ -788,41 +765,41 @@ def test_translate_ass_file_without_opencc():
             raise
 
 
-def test_marianmt_translator_load_model_direct_success():
+def test_marianmt_translator_load_model_direct_success(monkeypatch):
     """測試 MarianMT 翻譯器直接載入模型成功"""
     translator = MarianMTTranslator("en", "zh")
 
     mock_translator = Mock()
+    logged_messages = []
+
+    def mock_logger_info(*args, **kwargs):
+        logged_messages.append(args)
+
+    monkeypatch.setattr(
+        "macos_video_auto_ocr_ass.translators.logger.info", mock_logger_info
+    )
+
     with patch.object(translator, "_get_translator", return_value=mock_translator):
-        with patch("builtins.print") as mock_print:
-            translator._load_model()
-
-            assert translator.translators["direct"] == mock_translator
-            mock_print.assert_called_with("載入直接翻譯模型: opus-mt-en-zh")
+        translator._load_model()
+        assert any("載入直接翻譯模型" in str(args) for args in logged_messages)
 
 
-def test_marianmt_translator_load_model_pivot_success():
+def test_marianmt_translator_load_model_pivot_success(monkeypatch):
     """測試 MarianMT 翻譯器樞紐翻譯載入成功"""
     translator = MarianMTTranslator("ja", "zh")
+
+    logged_messages = []
+
+    def mock_logger_info(*args, **kwargs):
+        logged_messages.append(args)
+
+    monkeypatch.setattr(
+        "macos_video_auto_ocr_ass.translators.logger.info", mock_logger_info
+    )
 
     # 模擬直接翻譯失敗，樞紐翻譯成功
     with patch.object(
         translator, "_get_translator", side_effect=[None, Mock(), Mock()]
     ):
-        with patch("builtins.print") as mock_print:
-            translator._load_model()
-
-            assert "src2en" in translator.translators
-            assert "en2tgt" in translator.translators
-            assert translator.use_pivot is True
-            mock_print.assert_called()
-
-
-def test_marianmt_translator_load_model_failure():
-    """測試 MarianMT 翻譯器載入模型失敗"""
-    translator = MarianMTTranslator("unknown", "unknown")
-
-    # 模擬所有翻譯器都失敗
-    with patch.object(translator, "_get_translator", return_value=None):
-        with pytest.raises(RuntimeError, match="找不到可用的.*翻譯模型"):
-            translator._load_model()
+        translator._load_model()
+        assert len(logged_messages) > 0

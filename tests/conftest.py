@@ -49,11 +49,37 @@ Dialogue: 0,0:00:03.00,0:00:05.00,Default,,0,0,0,,{\\pos(100,200)}Positioned tex
 
 
 @pytest.fixture
+def simple_ass_content() -> str:
+    """創建簡單的 ASS 字幕內容（只有一個字幕事件）"""
+    return """[Script Info]
+Title: Test Subtitle
+ScriptType: v4.00+
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello World
+"""
+
+
+@pytest.fixture
 def sample_ass_file(sample_ass_content: str, temp_dir: str) -> str:
     """創建測試用的 ASS 檔案"""
     ass_file = os.path.join(temp_dir, "test.ass")
     with open(ass_file, "w", encoding="utf-8") as f:
         f.write(sample_ass_content)
+    return ass_file
+
+
+@pytest.fixture
+def simple_ass_file(simple_ass_content: str, temp_dir: str) -> str:
+    """創建簡單的 ASS 檔案（只有一個字幕事件）"""
+    ass_file = os.path.join(temp_dir, "simple_test.ass")
+    with open(ass_file, "w", encoding="utf-8") as f:
+        f.write(simple_ass_content)
     return ass_file
 
 

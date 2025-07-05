@@ -6,7 +6,7 @@
 
 import io
 import os
-from typing import Generator, List, Optional, Tuple, Union
+from typing import Any, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 import objc
@@ -23,8 +23,13 @@ from Quartz import (
 )
 from Vision import VNImageRequestHandler, VNRecognizeTextRequest
 
+from .constants import DEFAULT_DOWNSCALE, DEFAULT_FONT_SIZE, DEFAULT_INTERVAL
+from .logger import logger
 
-def _safe_cgimage_extraction(generator, cm_time, quiet=False):
+
+def _safe_cgimage_extraction(
+    generator: AVAssetImageGenerator, cm_time: Any, quiet: bool = False
+) -> Optional[Any]:
     """
     安全地從影片生成器中提取 CGImage
 
@@ -45,11 +50,16 @@ def _safe_cgimage_extraction(generator, cm_time, quiet=False):
         return cg_image
     except Exception as e:
         if not quiet:
-            print(f"[DEBUG] Failed to extract frame: {e}")
+            logger.debug(f"Failed to extract frame: {e}")
         return None
 
 
-def _process_frame_image(pil_image, downscale, scan_rect, quiet=False):
+def _process_frame_image(
+    pil_image: Image.Image,
+    downscale: Optional[int],
+    scan_rect: Optional[Tuple[int, int, int, int]],
+    quiet: bool = False,
+) -> Tuple[Image.Image, Tuple[int, int]]:
     """
     處理幀圖像：縮放和裁剪
 
@@ -68,21 +78,21 @@ def _process_frame_image(pil_image, downscale, scan_rect, quiet=False):
             (pil_image.width // downscale, pil_image.height // downscale)
         )
 
-    crop_offset = (0, 0)
+    crop_offset: Tuple[int, int] = (0, 0)
     if scan_rect is not None:
         # scan_rect: (x, y, width, height) in original resolution
         x, y, w, h = scan_rect
         # 轉換到 downscaled 幀座標
-        x_ = int(x / downscale)
-        y_ = int(y / downscale)
-        w_ = int(w / downscale)
-        h_ = int(h / downscale)
+        x_ = int(x / downscale) if downscale else x
+        y_ = int(y / downscale) if downscale else y
+        w_ = int(w / downscale) if downscale else w
+        h_ = int(h / downscale) if downscale else h
         pil_image = pil_image.crop((x_, y_, x_ + w_, y_ + h_))
         crop_offset = (x_, y_)
 
     if not quiet:
-        print(
-            f"[DEBUG] Processed frame, "
+        logger.debug(
+            f"Processed frame, "
             f"PIL image size: {getattr(pil_image, 'size', None)}, "
             f"mode: {getattr(pil_image, 'mode', None)}, "
             f"crop_offset: {crop_offset}"
@@ -91,7 +101,7 @@ def _process_frame_image(pil_image, downscale, scan_rect, quiet=False):
     return pil_image, crop_offset
 
 
-def cgimage_to_pil(cg_image) -> Image.Image:
+def cgimage_to_pil(cg_image: Any) -> Image.Image:
     """將 CGImageRef 轉換為 PIL Image"""
     width = CGImageGetWidth(cg_image)
     height = CGImageGetHeight(cg_image)
@@ -112,8 +122,8 @@ def get_video_info(video_path: str) -> Tuple[float, Optional[int], Optional[int]
     duration = asset.duration().value / asset.duration().timescale
 
     # 獲取分辨率
-    original_width = None
-    original_height = None
+    original_width: Optional[int] = None
+    original_height: Optional[int] = None
     tracks = asset.tracks()
     if tracks and len(tracks) > 0:
         for track in tracks:
@@ -128,8 +138,8 @@ def get_video_info(video_path: str) -> Tuple[float, Optional[int], Optional[int]
 
 def extract_frames(
     video_path: str,
-    interval: float = 1.0,
-    downscale: int = 2,
+    interval: float = DEFAULT_INTERVAL,
+    downscale: Optional[int] = DEFAULT_DOWNSCALE,
     quiet: bool = False,
     scan_rect: Optional[Tuple[int, int, int, int]] = None,
 ) -> Generator[Tuple[float, Image.Image, Tuple[int, int]], None, None]:
@@ -147,7 +157,7 @@ def extract_frames(
         (時間戳, PIL圖像, 裁剪偏移)
     """
     if not quiet:
-        print(f"[DEBUG] Entering extract_frames for {video_path}")
+        logger.debug(f"Entering extract_frames for {video_path}")
 
     url = NSURL.fileURLWithPath_(os.path.abspath(video_path))
     asset = AVAsset.assetWithURL_(url)
@@ -156,7 +166,7 @@ def extract_frames(
 
     duration = asset.duration().value / asset.duration().timescale
     if not quiet:
-        print(f"[DEBUG] Video duration: {duration} seconds")
+        logger.debug(f"Video duration: {duration} seconds")
 
     times = [CMTimeMakeWithSeconds(t, 600) for t in np.arange(0, duration, interval)]
     yielded = False
@@ -164,13 +174,13 @@ def extract_frames(
     for idx, (t, cm_time) in enumerate(zip(np.arange(0, duration, interval), times)):
         if t >= duration:
             if not quiet:
-                print(
-                    f"[DEBUG] Skipping frame at {t:.2f}s (beyond duration {duration:.2f}s)"
+                logger.debug(
+                    f"Skipping frame at {t:.2f}s (beyond duration {duration:.2f}s)"
                 )
             continue
 
         if not quiet:
-            print(f"[DEBUG] Attempting to extract frame at {t:.2f}s (index {idx})")
+            logger.debug(f"Attempting to extract frame at {t:.2f}s (index {idx})")
 
         cg_image = _safe_cgimage_extraction(generator, cm_time, quiet)
         if cg_image is None:
@@ -185,14 +195,14 @@ def extract_frames(
         yield t, pil_image, crop_offset
 
     if not yielded and not quiet:
-        print("[DEBUG] No frames were yielded from extract_frames!")
+        logger.debug("No frames were yielded from extract_frames!")
 
 
 def ocr_image(
     image: Image.Image,
     recognition_languages: Optional[List[str]] = None,
     quiet: bool = False,
-) -> List[Tuple[str, object]]:
+) -> List[Tuple[str, Any]]:
     """
     對圖像進行 OCR 識別
 
@@ -202,11 +212,11 @@ def ocr_image(
         quiet: 是否安靜模式
 
     Returns:
-        OCR 結果列表，每個元素為 (文字, 邊界框)
+        識別結果列表，每個元素為 (文字, 邊界框)
     """
     if not quiet:
-        print(
-            f"[DEBUG] Entering ocr_image, image type: {type(image)}, size: {getattr(image, 'size', None)}"
+        logger.debug(
+            f"Entering ocr_image, image type: {type(image)}, size: {getattr(image, 'size', None)}"
         )
 
     buf = io.BytesIO()
@@ -214,7 +224,7 @@ def ocr_image(
     nsdata = NSData.dataWithBytes_length_(buf.getvalue(), len(buf.getvalue()))
     ci_image = CIImage.imageWithData_(nsdata)
     handler = VNImageRequestHandler.alloc().initWithCIImage_options_(ci_image, None)
-    results = []
+    results: List[Tuple[str, Any]] = []
 
     def handler_block(request, error):
         if error is not None:
@@ -230,7 +240,7 @@ def ocr_image(
     request.setAutomaticallyDetectsLanguage_(True)
     if recognition_languages:
         if not quiet:
-            print(f"[DEBUG] Setting recognition languages: {recognition_languages}")
+            logger.debug(f"Setting recognition languages: {recognition_languages}")
         request.setRecognitionLanguages_(recognition_languages)
 
     handler.performRequests_error_([request], None)

@@ -6,13 +6,23 @@
 
 import os
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Dict, List, Optional, Union
 
 import pysubs2
 from langdetect import detect
 
+from .constants import (
+    DEFAULT_LLAMA_MODEL_FILENAME,
+    DEFAULT_LLAMA_MODEL_REPO,
+    DEFAULT_MODEL_DIR,
+    DEFAULT_N_CTX,
+    DEFAULT_N_THREADS,
+    MARIANMT_PIPELINE,
+)
+from .logger import logger
 
-def _create_opencc_converter():
+
+def _create_opencc_converter() -> Optional[Any]:
     """創建 OpenCC 轉換器（工廠函數）"""
     try:
         from opencc import OpenCC
@@ -23,16 +33,16 @@ def _create_opencc_converter():
 
 
 # 全局 OpenCC 實例
-opencc = _create_opencc_converter()
+opencc: Optional[Any] = _create_opencc_converter()
 
 
 class BaseTranslator(ABC):
     """翻譯器抽象基類"""
 
-    def __init__(self, src_lang: str, tgt_lang: str):
-        self.src_lang = src_lang
-        self.tgt_lang = tgt_lang
-        self._model = None
+    def __init__(self, src_lang: str, tgt_lang: str) -> None:
+        self.src_lang: str = src_lang
+        self.tgt_lang: str = tgt_lang
+        self._model: Optional[Any] = None
 
     @abstractmethod
     def _load_model(self) -> None:
@@ -72,7 +82,7 @@ class BaseTranslator(ABC):
                 else:
                     return result
             except Exception as e:
-                print(f"[WARNING] Translation failed: {e}")
+                logger.warning(f"Translation failed: {e}")
                 if _ == retry:  # 最後一次重試
                     return text  # 返回原文
 
@@ -93,10 +103,11 @@ class BaseTranslator(ABC):
 
         subs = pysubs2.load(input_ass)
         groups = group_by_time(subs)
-        new_lines = []
+        new_lines: List[pysubs2.SSAEvent] = []
 
         for (start, end), lines in groups.items():
-            texts, tags_list = [], []
+            texts: List[str] = []
+            tags_list: List[str] = []
             for line in lines:
                 text, tags = extract_text_and_tags(line.text)
                 texts.append(text.strip())
@@ -110,11 +121,10 @@ class BaseTranslator(ABC):
                 translated = opencc.convert(translated)
 
             if show_text:
-                print("--- 原文 ---")
-                print(merged_text)
-                print("--- 譯文 ---")
-                print(translated)
-                print()
+                logger.info("--- 原文 ---")
+                logger.info(merged_text)
+                logger.info("--- 譯文 ---")
+                logger.info(translated)
 
             translated_lines = translated.split(" ")
             for i, line in enumerate(lines):
@@ -136,18 +146,18 @@ class LlamaTranslator(BaseTranslator):
         self,
         src_lang: str,
         tgt_lang: str,
-        model_repo: str = "mradermacher/X-ALMA-13B-Group6-GGUF",
-        model_filename: str = "X-ALMA-13B-Group6.Q8_0.gguf",
-        model_dir: str = "models",
-        n_ctx: int = 2048,
-        n_threads: int = 4,
-    ):
+        model_repo: str = DEFAULT_LLAMA_MODEL_REPO,
+        model_filename: str = DEFAULT_LLAMA_MODEL_FILENAME,
+        model_dir: str = DEFAULT_MODEL_DIR,
+        n_ctx: int = DEFAULT_N_CTX,
+        n_threads: int = DEFAULT_N_THREADS,
+    ) -> None:
         super().__init__(src_lang, tgt_lang)
-        self.model_repo = model_repo
-        self.model_filename = model_filename
-        self.model_dir = model_dir
-        self.n_ctx = n_ctx
-        self.n_threads = n_threads
+        self.model_repo: str = model_repo
+        self.model_filename: str = model_filename
+        self.model_dir: str = model_dir
+        self.n_ctx: int = n_ctx
+        self.n_threads: int = n_threads
 
     def _download_model(self) -> str:
         """下載模型"""
@@ -165,7 +175,7 @@ class LlamaTranslator(BaseTranslator):
         """載入 Llama 模型"""
         from llama_cpp import Llama
 
-        print("下載/載入 Llama 模型中...")
+        logger.info("下載/載入 Llama 模型中...")
         model_path = self._download_model()
         self._model = Llama(
             model_path=model_path,
@@ -194,23 +204,23 @@ class MarianMTTranslator(BaseTranslator):
 
     def __init__(
         self, src_lang: str, tgt_lang: str, device: str = "mps", max_length: int = 1024
-    ):
+    ) -> None:
         super().__init__(src_lang, tgt_lang)
-        self.device = device
-        self.max_length = max_length
-        self.translators = {}
-        self.tgt_lang_for_model = None
-        self.use_pivot = False
+        self.device: str = device
+        self.max_length: int = max_length
+        self.translators: Dict[str, Any] = {}
+        self.tgt_lang_for_model: Optional[str] = None
+        self.use_pivot: bool = False
 
-    def _get_translator(self, src: str, tgt: str):
-        """獲取翻譯器"""
+    def _get_translator(self, src: str, tgt: str) -> Optional[Any]:
+        """獲取翻譯器實例"""
         from huggingface_hub.utils import RepositoryNotFoundError
         from transformers import pipeline
         from transformers.pipelines import Pipeline
 
         model_name = f"Helsinki-NLP/opus-mt-{src}-{tgt}"
         try:
-            return pipeline("translation", model=model_name, device=self.device)
+            return pipeline(MARIANMT_PIPELINE, model=model_name, device=self.device)
         except (OSError, RepositoryNotFoundError):
             return None
 
@@ -228,7 +238,7 @@ class MarianMTTranslator(BaseTranslator):
         direct_translator = self._get_translator(self.src_lang, self.tgt_lang_for_model)
         if direct_translator:
             self.translators["direct"] = direct_translator
-            print(
+            logger.info(
                 f"載入直接翻譯模型: opus-mt-{self.src_lang}-{self.tgt_lang_for_model}"
             )
             return
@@ -241,7 +251,7 @@ class MarianMTTranslator(BaseTranslator):
                 self.translators["src2en"] = src2en
                 self.translators["en2tgt"] = en2tgt
                 self.use_pivot = True
-                print(
+                logger.info(
                     f"載入中轉翻譯模型: opus-mt-{self.src_lang}-en + opus-mt-en-{self.tgt_lang_for_model}"
                 )
                 return
@@ -270,19 +280,22 @@ class MarianMTTranslator(BaseTranslator):
 
 
 def create_translator(
-    translator_type: str, src_lang: str, tgt_lang: str, **kwargs
+    translator_type: str, src_lang: str, tgt_lang: str, **kwargs: Any
 ) -> BaseTranslator:
     """
-    工廠函數：創建翻譯器
+    創建翻譯器實例
 
     Args:
-        translator_type: 翻譯器類型 ("llama" 或 "marianmt")
-        src_lang: 來源語言
+        translator_type: 翻譯器類型 ('llama' 或 'marianmt')
+        src_lang: 源語言
         tgt_lang: 目標語言
         **kwargs: 其他參數
 
     Returns:
         翻譯器實例
+
+    Raises:
+        ValueError: 不支援的翻譯器類型
     """
     if translator_type.lower() == "llama":
         return LlamaTranslator(src_lang, tgt_lang, **kwargs)
