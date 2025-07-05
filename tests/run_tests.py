@@ -9,9 +9,12 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import List, Optional
 
 
-def run_tests(test_type="all", coverage=False, verbose=False):
+def run_tests(
+    test_type: str = "all", coverage: bool = False, verbose: bool = False
+) -> bool:
     """
     運行測試
 
@@ -19,13 +22,16 @@ def run_tests(test_type="all", coverage=False, verbose=False):
         test_type: 測試類型 ("all", "unit", "integration", "fast")
         coverage: 是否生成覆蓋率報告
         verbose: 是否詳細輸出
+
+    Returns:
+        測試是否成功
     """
     # 確保在正確的目錄
     project_root = Path(__file__).parent.parent
     os.chdir(project_root)
 
     # 構建 pytest 命令
-    cmd = ["python", "-m", "pytest"]
+    cmd: List[str] = ["python", "-m", "pytest"]
 
     if verbose:
         cmd.append("-v")
@@ -61,18 +67,21 @@ def run_tests(test_type="all", coverage=False, verbose=False):
         return False
 
 
-def run_specific_test(test_file, test_function=None):
+def run_specific_test(test_file: str, test_function: Optional[str] = None) -> bool:
     """
     運行特定測試
 
     Args:
         test_file: 測試檔案路徑
         test_function: 特定測試函數名稱（可選）
+
+    Returns:
+        測試是否成功
     """
     project_root = Path(__file__).parent.parent
     os.chdir(project_root)
 
-    cmd = ["python", "-m", "pytest", "-v"]
+    cmd: List[str] = ["python", "-m", "pytest", "-v"]
 
     if test_function:
         cmd.append(f"tests/{test_file}::{test_function}")
@@ -90,7 +99,7 @@ def run_specific_test(test_file, test_function=None):
         return False
 
 
-def main():
+def main() -> None:
     """主函數"""
     if len(sys.argv) < 2:
         print("使用方法:")

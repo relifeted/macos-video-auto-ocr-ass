@@ -226,7 +226,7 @@ def ocr_image(
     handler = VNImageRequestHandler.alloc().initWithCIImage_options_(ci_image, None)
     results: List[Tuple[str, Any]] = []
 
-    def handler_block(request, error):
+    def handler_block(request: Any, error: Any) -> None:
         if error is not None:
             return
         for obs in request.results():

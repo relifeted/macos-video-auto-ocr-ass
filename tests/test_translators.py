@@ -449,9 +449,8 @@ class TestTranslateAssFileShowText:
         def fake_save(self, path):
             nonlocal save_called
             save_called = True
-            print(f"DEBUG: fake_save called with {len(self.events)} events")
-            for e in self.events:
-                print(f"DEBUG: event text = '{e.text}'")
+            # 移除 debug print，改為使用 logger 或直接移除
+            # 這些是測試用的 debug 輸出，不需要保留
 
         monkeypatch.setattr(pysubs2.SSAFile, "save", fake_save)
 
