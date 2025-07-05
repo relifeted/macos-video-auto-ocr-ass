@@ -24,6 +24,73 @@ from Quartz import (
 from Vision import VNImageRequestHandler, VNRecognizeTextRequest
 
 
+def _safe_cgimage_extraction(generator, cm_time, quiet=False):
+    """
+    安全地從影片生成器中提取 CGImage
+
+    Args:
+        generator: AVAssetImageGenerator 實例
+        cm_time: CMTime 時間點
+        quiet: 是否安靜模式
+
+    Returns:
+        CGImage 或 None（如果提取失敗）
+    """
+    try:
+        result = generator.copyCGImageAtTime_actualTime_error_(cm_time, None, None)
+        if isinstance(result, tuple):
+            cg_image = result[0]
+        else:
+            cg_image = result
+        return cg_image
+    except Exception as e:
+        if not quiet:
+            print(f"[DEBUG] Failed to extract frame: {e}")
+        return None
+
+
+def _process_frame_image(pil_image, downscale, scan_rect, quiet=False):
+    """
+    處理幀圖像：縮放和裁剪
+
+    Args:
+        pil_image: PIL 圖像
+        downscale: 縮放因子
+        scan_rect: 掃描區域
+        quiet: 是否安靜模式
+
+    Returns:
+        (處理後的圖像, 裁剪偏移)
+    """
+    # 縮放處理
+    if downscale and downscale > 1:
+        pil_image = pil_image.resize(
+            (pil_image.width // downscale, pil_image.height // downscale)
+        )
+
+    crop_offset = (0, 0)
+    if scan_rect is not None:
+        # scan_rect: (x, y, width, height) in original resolution
+        x, y, w, h = scan_rect
+        # 轉換到 downscaled 幀座標
+        x_ = int(x / downscale)
+        y_ = int(y / downscale)
+        w_ = int(w / downscale)
+        h_ = int(h / downscale)
+        pil_image = pil_image.crop((x_, y_, x_ + w_, y_ + h_))
+        crop_offset = (x_, y_)
+
+    if not quiet:
+        print(
+            f"[DEBUG] Processed frame, "
+            f"PIL image size: {getattr(pil_image, 'size', None)}, "
+            f"mode: {getattr(pil_image, 'mode', None)}, "
+            f"crop_offset: {crop_offset}"
+        )
+
+    return pil_image, crop_offset
+
+
 def cgimage_to_pil(cg_image) -> Image.Image:
     """將 CGImageRef 轉換為 PIL Image"""
     width = CGImageGetWidth(cg_image)
@@ -105,49 +172,14 @@ def extract_frames(
         if not quiet:
             print(f"[DEBUG] Attempting to extract frame at {t:.2f}s (index {idx})")
 
-        try:
-            result = generator.copyCGImageAtTime_actualTime_error_(cm_time, None, None)
-            if isinstance(result, tuple):
-                cg_image = result[0]
-            else:
-                cg_image = result
-
-            if cg_image is None:
-                if not quiet:
-                    print(f"[DEBUG] cg_image is None at {t:.2f}s")
-                continue
-        except Exception as e:
-            if not quiet:
-                print(f"[DEBUG] Failed to extract frame at {t:.2f}s: {e}")
+        cg_image = _safe_cgimage_extraction(generator, cm_time, quiet)
+        if cg_image is None:
             continue
 
         pil_image = cgimage_to_pil(cg_image)
-
-        # 縮放處理
-        if downscale and downscale > 1:
-            pil_image = pil_image.resize(
-                (pil_image.width // downscale, pil_image.height // downscale)
-            )
-
-        crop_offset = (0, 0)
-        if scan_rect is not None:
-            # scan_rect: (x, y, width, height) in original resolution
-            x, y, w, h = scan_rect
-            # 轉換到 downscaled 幀座標
-            x_ = int(x / downscale)
-            y_ = int(y / downscale)
-            w_ = int(w / downscale)
-            h_ = int(h / downscale)
-            pil_image = pil_image.crop((x_, y_, x_ + w_, y_ + h_))
-            crop_offset = (x_, y_)
-
-        if not quiet:
-            print(
-                f"[DEBUG] Extracted and downscaled frame at {t:.2f}s, "
-                f"PIL image size: {getattr(pil_image, 'size', None)}, "
-                f"mode: {getattr(pil_image, 'mode', None)}, "
-                f"crop_offset: {crop_offset}"
-            )
+        pil_image, crop_offset = _process_frame_image(
+            pil_image, downscale, scan_rect, quiet
+        )
 
         yielded = True
         yield t, pil_image, crop_offset

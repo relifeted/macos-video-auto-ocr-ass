@@ -678,216 +678,372 @@ def test_ocr_image_handler_block_error(monkeypatch):
     results = ocr_image(img, quiet=True)
     assert results == []
 
-    @patch("builtins.print")
-    def test_extract_frames_debug_output(self, mock_print):
-        """測試 extract_frames 的 debug 輸出"""
-        with (
-            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
-            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_asset,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
-            ) as mock_generator,
-        ):
 
-            # 模擬影片資訊
-            mock_asset_instance = Mock()
-            mock_asset_instance.duration.return_value.value = 1000
-            mock_asset_instance.duration.return_value.timescale = 1000
-            mock_asset.assetWithURL_.return_value = mock_asset_instance
+def test_safe_cgimage_extraction_success():
+    """測試 CGImage 提取成功"""
+    from macos_video_auto_ocr_ass.video_utils import _safe_cgimage_extraction
 
-            # 模擬生成器
-            mock_generator_instance = Mock()
-            mock_generator.assetImageGeneratorWithAsset_.return_value = (
-                mock_generator_instance
-            )
+    mock_generator = Mock()
+    mock_cm_time = Mock()
+    mock_cg_image = Mock()
 
-            # 模擬提取幀失敗
-            mock_generator_instance.copyCGImageAtTime_actualTime_error_.side_effect = (
-                Exception("extract error")
-            )
+    # 模擬成功提取
+    mock_generator.copyCGImageAtTime_actualTime_error_.return_value = mock_cg_image
 
-            frames = list(extract_frames("test.mp4", quiet=False))
-            self.assertEqual(len(frames), 0)
+    result = _safe_cgimage_extraction(mock_generator, mock_cm_time, quiet=False)
+    assert result == mock_cg_image
 
-            # 驗證 debug 輸出被呼叫
-            mock_print.assert_called()
 
-    @patch("builtins.print")
-    def test_extract_frames_no_frames_yielded(self, mock_print):
-        """測試 extract_frames 沒有產生任何幀的情況"""
-        with (
-            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
-            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_asset,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
-            ) as mock_generator,
-        ):
+def test_safe_cgimage_extraction_tuple_result():
+    """測試 CGImage 提取返回元組的情況"""
+    from macos_video_auto_ocr_ass.video_utils import _safe_cgimage_extraction
 
-            # 模擬影片資訊
-            mock_asset_instance = Mock()
-            mock_asset_instance.duration.return_value.value = 1000
-            mock_asset_instance.duration.return_value.timescale = 1000
-            mock_asset.assetWithURL_.return_value = mock_asset_instance
+    mock_generator = Mock()
+    mock_cm_time = Mock()
+    mock_cg_image = Mock()
 
-            # 模擬生成器
-            mock_generator_instance = Mock()
-            mock_generator.assetImageGeneratorWithAsset_.return_value = (
-                mock_generator_instance
-            )
+    # 模擬返回元組的情況
+    mock_generator.copyCGImageAtTime_actualTime_error_.return_value = (
+        mock_cg_image,
+        None,
+    )
 
-            # 模擬所有幀都失敗
-            mock_generator_instance.copyCGImageAtTime_actualTime_error_.return_value = (
-                None
-            )
+    result = _safe_cgimage_extraction(mock_generator, mock_cm_time, quiet=False)
+    assert result == mock_cg_image
 
-            frames = list(extract_frames("test.mp4", quiet=False))
-            self.assertEqual(len(frames), 0)
 
-            # 驗證 debug 輸出被呼叫
-            mock_print.assert_called()
+def test_safe_cgimage_extraction_exception():
+    """測試 CGImage 提取失敗的情況"""
+    from macos_video_auto_ocr_ass.video_utils import _safe_cgimage_extraction
 
-    @patch("builtins.print")
-    def test_ocr_image_debug_output(self, mock_print):
-        """測試 ocr_image 的 debug 輸出"""
-        mock_image = Mock()
-        mock_image.size = (100, 100)
-        mock_image.save = Mock()
+    mock_generator = Mock()
+    mock_cm_time = Mock()
 
-        with (
-            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
-            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
-            ) as mock_handler,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
-            ) as mock_request,
-        ):
+    # 模擬提取失敗
+    mock_generator.copyCGImageAtTime_actualTime_error_.side_effect = Exception(
+        "Extraction failed"
+    )
 
-            # 模擬 OCR 處理
-            mock_handler_instance = Mock()
-            mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
-                mock_handler_instance
-            )
+    result = _safe_cgimage_extraction(mock_generator, mock_cm_time, quiet=False)
+    assert result is None
 
-            mock_request_instance = Mock()
-            mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
-                mock_request_instance
-            )
 
-            results = ocr_image(mock_image, recognition_languages=["en"], quiet=False)
+def test_safe_cgimage_extraction_quiet_mode():
+    """測試安靜模式下的 CGImage 提取"""
+    from macos_video_auto_ocr_ass.video_utils import _safe_cgimage_extraction
 
-            # 驗證 debug 輸出被呼叫
-            mock_print.assert_called()
+    mock_generator = Mock()
+    mock_cm_time = Mock()
 
-    def test_ocr_image_with_error_in_handler(self):
-        """測試 ocr_image 處理器中的錯誤情況"""
-        mock_image = Mock()
-        mock_image.size = (100, 100)
-        mock_image.save = Mock()
+    # 模擬提取失敗
+    mock_generator.copyCGImageAtTime_actualTime_error_.side_effect = Exception(
+        "Extraction failed"
+    )
 
-        with (
-            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
-            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
-            ) as mock_handler,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
-            ) as mock_request,
-        ):
+    # 在安靜模式下不應該有輸出
+    result = _safe_cgimage_extraction(mock_generator, mock_cm_time, quiet=True)
+    assert result is None
 
-            # 模擬 OCR 處理
-            mock_handler_instance = Mock()
-            mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
-                mock_handler_instance
-            )
 
-            mock_request_instance = Mock()
-            mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
-                mock_request_instance
-            )
+def test_process_frame_image_no_downscale():
+    """測試處理幀圖像（無縮放）"""
+    from macos_video_auto_ocr_ass.video_utils import _process_frame_image
 
-            # 模擬處理器拋出例外
-            mock_handler_instance.performRequests_error_.side_effect = Exception(
-                "OCR error"
-            )
+    mock_image = Mock()
+    mock_image.width = 100
+    mock_image.height = 50
+    mock_image.size = (100, 50)
+    mock_image.mode = "RGB"
 
-            with self.assertRaises(Exception):
-                ocr_image(mock_image)
+    result_image, crop_offset = _process_frame_image(
+        mock_image, downscale=1, scan_rect=None, quiet=False
+    )
 
-    def test_ocr_image_with_empty_candidates(self):
-        """測試 ocr_image 候選結果為空的情況"""
-        mock_image = Mock()
-        mock_image.size = (100, 100)
-        mock_image.save = Mock()
+    assert result_image == mock_image
+    assert crop_offset == (0, 0)
 
-        with (
-            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
-            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
-            ) as mock_handler,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
-            ) as mock_request,
-        ):
 
-            # 模擬 OCR 處理
-            mock_handler_instance = Mock()
-            mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
-                mock_handler_instance
-            )
+def test_process_frame_image_with_downscale():
+    """測試處理幀圖像（有縮放）"""
+    from macos_video_auto_ocr_ass.video_utils import _process_frame_image
 
-            mock_request_instance = Mock()
-            mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
-                mock_request_instance
-            )
+    mock_image = Mock()
+    mock_image.width = 100
+    mock_image.height = 50
+    mock_image.size = (100, 50)
+    mock_image.mode = "RGB"
 
-            # 模擬空的候選結果
-            mock_obs = Mock()
-            mock_obs.topCandidates_.return_value = []
-            mock_obs.boundingBox.return_value = None
+    # 模擬 resize 方法
+    mock_image.resize.return_value = mock_image
 
-            mock_request_instance.results.return_value = [mock_obs]
+    result_image, crop_offset = _process_frame_image(
+        mock_image, downscale=2, scan_rect=None, quiet=False
+    )
 
-            results = ocr_image(mock_image)
-            self.assertEqual(len(results), 0)
+    mock_image.resize.assert_called_once_with((50, 25))
+    assert crop_offset == (0, 0)
 
-    def test_ocr_image_with_none_candidate(self):
-        """測試 ocr_image 候選結果為 None 的情況"""
-        mock_image = Mock()
-        mock_image.size = (100, 100)
-        mock_image.save = Mock()
 
-        with (
-            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
-            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
-            ) as mock_handler,
-            patch(
-                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
-            ) as mock_request,
-        ):
+def test_process_frame_image_with_scan_rect():
+    """測試處理幀圖像（有掃描區域）"""
+    from macos_video_auto_ocr_ass.video_utils import _process_frame_image
 
-            # 模擬 OCR 處理
-            mock_handler_instance = Mock()
-            mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
-                mock_handler_instance
-            )
+    mock_image = Mock()
+    mock_image.width = 100
+    mock_image.height = 50
+    mock_image.size = (100, 50)
+    mock_image.mode = "RGB"
 
-            mock_request_instance = Mock()
-            mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
-                mock_request_instance
-            )
+    # 模擬 resize 和 crop 方法
+    mock_image.resize.return_value = mock_image
+    mock_image.crop.return_value = mock_image
 
-            # 模擬候選結果為 None
-            mock_obs = Mock()
-            mock_obs.topCandidates_.return_value = [None]  # None 候選
-            mock_obs.boundingBox.return_value = None
+    scan_rect = (10, 5, 80, 40)  # (x, y, width, height)
+    result_image, crop_offset = _process_frame_image(
+        mock_image, downscale=2, scan_rect=scan_rect, quiet=False
+    )
 
-            mock_request_instance.results.return_value = [mock_obs]
+    # 檢查裁剪參數：轉換到 downscaled 座標
+    expected_crop = (5, 2, 45, 22)  # (x_, y_, x_ + w_, y_ + h_)
+    mock_image.crop.assert_called_once_with(expected_crop)
+    assert crop_offset == (5, 2)
 
-            results = ocr_image(mock_image)
-            self.assertEqual(len(results), 0)
+
+def test_process_frame_image_quiet_mode():
+    """測試安靜模式下的幀圖像處理"""
+    from macos_video_auto_ocr_ass.video_utils import _process_frame_image
+
+    mock_image = Mock()
+    mock_image.width = 100
+    mock_image.height = 50
+    mock_image.size = (100, 50)
+    mock_image.mode = "RGB"
+
+    # 模擬 resize 方法
+    mock_image.resize.return_value = mock_image
+
+    # 在安靜模式下不應該有輸出
+    result_image, crop_offset = _process_frame_image(
+        mock_image, downscale=2, scan_rect=None, quiet=True
+    )
+
+    mock_image.resize.assert_called_once_with((50, 25))
+    assert crop_offset == (0, 0)
+
+
+def test_ocr_image_with_handler_error():
+    """測試 OCR 圖像處理器錯誤"""
+    from macos_video_auto_ocr_ass.video_utils import ocr_image
+
+    mock_image = Mock()
+    mock_image.size = (100, 100)
+    mock_image.save = Mock()
+
+    with (
+        patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+        patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+        ) as mock_handler,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+        ) as mock_request,
+    ):
+        # 模擬 OCR 處理
+        mock_handler_instance = Mock()
+        mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
+            mock_handler_instance
+        )
+
+        mock_request_instance = Mock()
+        mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
+            mock_request_instance
+        )
+
+        # 模擬處理器拋出例外
+        mock_handler_instance.performRequests_error_.side_effect = Exception(
+            "OCR error"
+        )
+
+        with pytest.raises(Exception, match="OCR error"):
+            ocr_image(mock_image)
+
+
+def test_ocr_image_with_empty_candidates():
+    """測試 OCR 圖像候選結果為空的情況"""
+    from macos_video_auto_ocr_ass.video_utils import ocr_image
+
+    mock_image = Mock()
+    mock_image.size = (100, 100)
+    mock_image.save = Mock()
+
+    with (
+        patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+        patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+        ) as mock_handler,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+        ) as mock_request,
+    ):
+        # 模擬 OCR 處理
+        mock_handler_instance = Mock()
+        mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
+            mock_handler_instance
+        )
+
+        mock_request_instance = Mock()
+        mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
+            mock_request_instance
+        )
+
+        # 模擬空的候選結果
+        mock_obs = Mock()
+        mock_obs.topCandidates_.return_value = []
+        mock_obs.boundingBox.return_value = None
+
+        mock_request_instance.results.return_value = [mock_obs]
+
+        results = ocr_image(mock_image)
+        assert len(results) == 0
+
+
+def test_ocr_image_with_none_candidate():
+    """測試 OCR 圖像候選結果為 None 的情況"""
+    from macos_video_auto_ocr_ass.video_utils import ocr_image
+
+    mock_image = Mock()
+    mock_image.size = (100, 100)
+    mock_image.save = Mock()
+
+    with (
+        patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+        patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+        ) as mock_handler,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+        ) as mock_request,
+    ):
+        # 模擬 OCR 處理
+        mock_handler_instance = Mock()
+        mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
+            mock_handler_instance
+        )
+
+        mock_request_instance = Mock()
+        mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
+            mock_request_instance
+        )
+
+        # 模擬候選結果為 None
+        mock_obs = Mock()
+        mock_obs.topCandidates_.return_value = [None]  # None 候選
+        mock_obs.boundingBox.return_value = None
+
+        mock_request_instance.results.return_value = [mock_obs]
+
+        results = ocr_image(mock_image)
+        assert len(results) == 0
+
+
+def test_ocr_image_with_error_in_handler():
+    """測試 OCR 圖像處理器中的錯誤情況"""
+    from macos_video_auto_ocr_ass.video_utils import ocr_image
+
+    mock_image = Mock()
+    mock_image.size = (100, 100)
+    mock_image.save = Mock()
+
+    with (
+        patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+        patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+        ) as mock_handler,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+        ) as mock_request,
+    ):
+        # 模擬 OCR 處理
+        mock_handler_instance = Mock()
+        mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
+            mock_handler_instance
+        )
+
+        mock_request_instance = Mock()
+        mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
+            mock_request_instance
+        )
+
+        # 模擬處理器拋出例外
+        mock_handler_instance.performRequests_error_.side_effect = Exception(
+            "OCR error"
+        )
+
+        with pytest.raises(Exception, match="OCR error"):
+            ocr_image(mock_image)
+
+
+def test_extract_frames_with_no_frames_yielded():
+    """測試 extract_frames 沒有產生任何幀的情況"""
+    from macos_video_auto_ocr_ass.video_utils import extract_frames
+
+    with (
+        patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+        patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_asset,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
+        ) as mock_generator,
+    ):
+        # 模擬影片資訊
+        mock_asset_instance = Mock()
+        mock_asset_instance.duration.return_value.value = 1000
+        mock_asset_instance.duration.return_value.timescale = 1000
+        mock_asset.assetWithURL_.return_value = mock_asset_instance
+
+        # 模擬生成器
+        mock_generator_instance = Mock()
+        mock_generator.assetImageGeneratorWithAsset_.return_value = (
+            mock_generator_instance
+        )
+
+        # 模擬所有幀都失敗
+        mock_generator_instance.copyCGImageAtTime_actualTime_error_.return_value = None
+
+        frames = list(extract_frames("test.mp4", quiet=False))
+        assert len(frames) == 0
+
+
+def test_extract_frames_debug_output():
+    """測試 extract_frames 的 debug 輸出"""
+    from macos_video_auto_ocr_ass.video_utils import extract_frames
+
+    with (
+        patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+        patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_asset,
+        patch(
+            "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
+        ) as mock_generator,
+    ):
+        # 模擬影片資訊
+        mock_asset_instance = Mock()
+        mock_asset_instance.duration.return_value.value = 1000
+        mock_asset_instance.duration.return_value.timescale = 1000
+        mock_asset.assetWithURL_.return_value = mock_asset_instance
+
+        # 模擬生成器
+        mock_generator_instance = Mock()
+        mock_generator.assetImageGeneratorWithAsset_.return_value = (
+            mock_generator_instance
+        )
+
+        # 模擬提取幀失敗
+        mock_generator_instance.copyCGImageAtTime_actualTime_error_.side_effect = (
+            Exception("extract error")
+        )
+
+        frames = list(extract_frames("test.mp4", quiet=False))
+        assert len(frames) == 0

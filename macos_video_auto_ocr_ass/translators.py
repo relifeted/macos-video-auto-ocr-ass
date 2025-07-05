@@ -11,13 +11,19 @@ from typing import Optional
 import pysubs2
 from langdetect import detect
 
-# 嘗試導入 opencc
-try:
-    from opencc import OpenCC
 
-    opencc = OpenCC("s2t")
-except ImportError:
-    opencc = None
+def _create_opencc_converter():
+    """創建 OpenCC 轉換器（工廠函數）"""
+    try:
+        from opencc import OpenCC
+
+        return OpenCC("s2t")
+    except ImportError:
+        return None
+
+
+# 全局 OpenCC 實例
+opencc = _create_opencc_converter()
 
 
 class BaseTranslator(ABC):
@@ -222,7 +228,9 @@ class MarianMTTranslator(BaseTranslator):
         direct_translator = self._get_translator(self.src_lang, self.tgt_lang_for_model)
         if direct_translator:
             self.translators["direct"] = direct_translator
-            print(f"載入直接翻譯模型: opus-mt-{self.src_lang}-{self.tgt_lang_for_model}")
+            print(
+                f"載入直接翻譯模型: opus-mt-{self.src_lang}-{self.tgt_lang_for_model}"
+            )
             return
 
         # 若找不到，嘗試 src-en + en-tgt
@@ -238,7 +246,9 @@ class MarianMTTranslator(BaseTranslator):
                 )
                 return
 
-        raise RuntimeError(f"找不到可用的 {self.src_lang}->{self.tgt_lang} 翻譯模型，也無法中轉。")
+        raise RuntimeError(
+            f"找不到可用的 {self.src_lang}->{self.tgt_lang} 翻譯模型，也無法中轉。"
+        )
 
     def _translate_text(self, text: str) -> str:
         """使用 MarianMT 翻譯文字"""

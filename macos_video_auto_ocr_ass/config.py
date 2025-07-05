@@ -36,17 +36,13 @@ class TranslationConfig:
 
     src_lang: str = "auto"
     tgt_lang: str = "Traditional Chinese"
-    translator_type: str = "llama"  # "llama" 或 "marianmt"
+    translator_type: str = "llama"
     show_text: bool = False
-
-    # Llama 特定配置
     model_repo: str = "mradermacher/X-ALMA-13B-Group6-GGUF"
     model_filename: str = "X-ALMA-13B-Group6.Q8_0.gguf"
     model_dir: str = "models"
     n_ctx: int = 2048
     n_threads: int = 4
-
-    # MarianMT 特定配置
     device: str = "mps"
     max_length: int = 1024
 
@@ -64,19 +60,46 @@ class MergeConfig:
 class HeatmapConfig:
     """熱區圖配置"""
 
-    grid_interval: int = 300
-    contrast_boost: float = 1.0
+    grid_interval: int = 50
+    contrast_boost: float = 1.5
+
+
+def _create_default_video_config() -> VideoConfig:
+    """創建預設影片配置"""
+    return VideoConfig()
+
+
+def _create_default_ocr_config() -> OCRConfig:
+    """創建預設 OCR 配置"""
+    return OCRConfig()
+
+
+def _create_default_translation_config() -> TranslationConfig:
+    """創建預設翻譯配置"""
+    return TranslationConfig()
+
+
+def _create_default_merge_config() -> MergeConfig:
+    """創建預設合併配置"""
+    return MergeConfig()
+
+
+def _create_default_heatmap_config() -> HeatmapConfig:
+    """創建預設熱區圖配置"""
+    return HeatmapConfig()
 
 
 @dataclass
 class AppConfig:
     """應用程式主配置"""
 
-    video: VideoConfig = field(default_factory=VideoConfig)
-    ocr: OCRConfig = field(default_factory=OCRConfig)
-    translation: TranslationConfig = field(default_factory=TranslationConfig)
-    merge: MergeConfig = field(default_factory=MergeConfig)
-    heatmap: HeatmapConfig = field(default_factory=HeatmapConfig)
+    video: VideoConfig = field(default_factory=_create_default_video_config)
+    ocr: OCRConfig = field(default_factory=_create_default_ocr_config)
+    translation: TranslationConfig = field(
+        default_factory=_create_default_translation_config
+    )
+    merge: MergeConfig = field(default_factory=_create_default_merge_config)
+    heatmap: HeatmapConfig = field(default_factory=_create_default_heatmap_config)
 
     # 全局配置
     output_dir: str = "output"
@@ -176,12 +199,17 @@ class AppConfig:
         }
 
 
+def create_config_factory() -> AppConfig:
+    """配置工廠函數"""
+    return AppConfig()
+
+
 def load_config(config_file: str) -> AppConfig:
     """從檔案載入配置"""
     import json
 
     if not os.path.exists(config_file):
-        return AppConfig()
+        return create_config_factory()
 
     with open(config_file, "r", encoding="utf-8") as f:
         config_dict = json.load(f)
@@ -193,11 +221,10 @@ def save_config(config: AppConfig, config_file: str) -> None:
     """儲存配置到檔案"""
     import json
 
-    config_dict = config.to_dict()
-
+    os.makedirs(os.path.dirname(config_file), exist_ok=True)
     with open(config_file, "w", encoding="utf-8") as f:
-        json.dump(config_dict, f, indent=2, ensure_ascii=False)
+        json.dump(config.to_dict(), f, indent=2, ensure_ascii=False)
 
 
 # 預設配置
-DEFAULT_CONFIG = AppConfig()
+DEFAULT_CONFIG = create_config_factory()
