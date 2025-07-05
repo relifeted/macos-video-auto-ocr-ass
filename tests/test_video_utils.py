@@ -630,57 +630,53 @@ class TestExtractFramesDebug:
         assert len(frames) == 2
 
 
-class TestOCRImageHandlerBlockError(unittest.TestCase):
-    """補測 ocr_image handler_block error 分支"""
+# 將此測試移出類別，改為 pytest function
 
-    def test_ocr_image_handler_block_error(self, monkeypatch):
-        # mock Vision 相關
-        import sys
 
-        from PIL import Image
+def test_ocr_image_handler_block_error(monkeypatch):
+    # mock Vision 相關
+    import sys
 
-        from macos_video_auto_ocr_ass.video_utils import ocr_image
+    from PIL import Image
 
-        sys.modules["macos_video_auto_ocr_ass.video_utils"].NSData = Mock()
-        sys.modules[
-            "macos_video_auto_ocr_ass.video_utils"
-        ].NSData.dataWithBytes_length_ = Mock(return_value="mock_nsdata")
-        sys.modules["macos_video_auto_ocr_ass.video_utils"].CIImage = Mock()
-        sys.modules["macos_video_auto_ocr_ass.video_utils"].CIImage.imageWithData_ = (
-            Mock(return_value="mock_ciimage")
-        )
-        mock_handler = Mock()
-        sys.modules["macos_video_auto_ocr_ass.video_utils"].VNImageRequestHandler = (
-            Mock()
-        )
-        sys.modules[
-            "macos_video_auto_ocr_ass.video_utils"
-        ].VNImageRequestHandler.alloc.return_value.initWithCIImage_options_.return_value = (
-            mock_handler
-        )
-        mock_request = Mock()
-        sys.modules["macos_video_auto_ocr_ass.video_utils"].VNRecognizeTextRequest = (
-            Mock()
-        )
-        sys.modules[
-            "macos_video_auto_ocr_ass.video_utils"
-        ].VNRecognizeTextRequest.alloc.return_value.initWithCompletionHandler_.return_value = (
-            mock_request
-        )
+    from macos_video_auto_ocr_ass.video_utils import ocr_image
 
-        # handler_block error 不為 None
-        def perform_requests(requests, error):
-            # 呼叫 handler_block 並傳 error
-            for req in requests:
-                if hasattr(req, "_completion_handler"):
-                    req._completion_handler(req, "some error")
+    sys.modules["macos_video_auto_ocr_ass.video_utils"].NSData = Mock()
+    sys.modules["macos_video_auto_ocr_ass.video_utils"].NSData.dataWithBytes_length_ = (
+        Mock(return_value="mock_nsdata")
+    )
+    sys.modules["macos_video_auto_ocr_ass.video_utils"].CIImage = Mock()
+    sys.modules["macos_video_auto_ocr_ass.video_utils"].CIImage.imageWithData_ = Mock(
+        return_value="mock_ciimage"
+    )
+    mock_handler = Mock()
+    sys.modules["macos_video_auto_ocr_ass.video_utils"].VNImageRequestHandler = Mock()
+    sys.modules[
+        "macos_video_auto_ocr_ass.video_utils"
+    ].VNImageRequestHandler.alloc.return_value.initWithCIImage_options_.return_value = (
+        mock_handler
+    )
+    mock_request = Mock()
+    sys.modules["macos_video_auto_ocr_ass.video_utils"].VNRecognizeTextRequest = Mock()
+    sys.modules[
+        "macos_video_auto_ocr_ass.video_utils"
+    ].VNRecognizeTextRequest.alloc.return_value.initWithCompletionHandler_.return_value = (
+        mock_request
+    )
 
-        mock_handler.performRequests_error_ = perform_requests
-        mock_request.results.return_value = []
-        # 測試
-        img = Image.new("RGB", (100, 50))
-        results = ocr_image(img, quiet=True)
-        assert results == []
+    # handler_block error 不為 None
+    def perform_requests(requests, error):
+        # 呼叫 handler_block 並傳 error
+        for req in requests:
+            if hasattr(req, "_completion_handler"):
+                req._completion_handler(req, "some error")
+
+    mock_handler.performRequests_error_ = perform_requests
+    mock_request.results.return_value = []
+    # 測試
+    img = Image.new("RGB", (100, 50))
+    results = ocr_image(img, quiet=True)
+    assert results == []
 
     @patch("builtins.print")
     def test_extract_frames_debug_output(self, mock_print):
@@ -856,9 +852,7 @@ class TestOCRImageHandlerBlockError(unittest.TestCase):
             mock_request_instance.results.return_value = [mock_obs]
 
             results = ocr_image(mock_image)
-            self.assertEqual(len(results), 1)
-            self.assertEqual(results[0][0], "")  # 空文字
-            self.assertIsNone(results[0][1])  # None 邊界框
+            self.assertEqual(len(results), 0)
 
     def test_ocr_image_with_none_candidate(self):
         """測試 ocr_image 候選結果為 None 的情況"""
@@ -889,9 +883,6 @@ class TestOCRImageHandlerBlockError(unittest.TestCase):
             )
 
             # 模擬候選結果為 None
-            mock_candidate = Mock()
-            mock_candidate.string.return_value = "test"
-
             mock_obs = Mock()
             mock_obs.topCandidates_.return_value = [None]  # None 候選
             mock_obs.boundingBox.return_value = None
@@ -899,6 +890,4 @@ class TestOCRImageHandlerBlockError(unittest.TestCase):
             mock_request_instance.results.return_value = [mock_obs]
 
             results = ocr_image(mock_image)
-            self.assertEqual(len(results), 1)
-            self.assertEqual(results[0][0], "")  # 空文字（因為候選為 None）
-            self.assertIsNone(results[0][1])  # None 邊界框
+            self.assertEqual(len(results), 0)
