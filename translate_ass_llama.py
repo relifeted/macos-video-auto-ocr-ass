@@ -2,11 +2,23 @@ import argparse
 import os
 import re
 from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 
 import pysubs2
 from langdetect import detect
 from llama_cpp import Llama
 from tqdm import tqdm
+
+from macos_video_auto_ocr_ass.constants import (
+    DEFAULT_FONT_SIZE,
+    DEFAULT_LLAMA_MODEL_FILENAME,
+    DEFAULT_LLAMA_MODEL_REPO,
+    DEFAULT_MODEL_DIR,
+    DEFAULT_N_CTX,
+    DEFAULT_N_THREADS,
+    LOGGER_NAME,
+)
+from macos_video_auto_ocr_ass.logger import get_logger
 
 # 新增 opencc
 try:
@@ -16,8 +28,10 @@ try:
 except ImportError:
     opencc = None
 
+logger = get_logger(LOGGER_NAME)
 
-def download_model(model_repo, model_filename, local_dir):
+
+def download_model(model_repo: str, model_filename: str, local_dir: str) -> str:
     from huggingface_hub import hf_hub_download
 
     os.makedirs(local_dir, exist_ok=True)
@@ -27,17 +41,17 @@ def download_model(model_repo, model_filename, local_dir):
     return model_path
 
 
-def extract_text_and_tags(text):
+def extract_text_and_tags(text: str) -> Tuple[str, List[str]]:
     tags = re.findall(r"{.*?}", text)
     text_only = re.sub(r"{.*?}", "", text)
     return text_only, tags
 
 
-def restore_tags(translated, tags):
+def restore_tags(translated: str, tags: List[str]) -> str:
     return "".join(tags) + translated
 
 
-def group_by_time(subs):
+def group_by_time(subs: Any) -> Dict[Tuple[int, int], List[Any]]:
     groups = defaultdict(list)
     for line in subs:
         key = (line.start, line.end)
@@ -45,7 +59,9 @@ def group_by_time(subs):
     return groups
 
 
-def translate_with_llama(llm, text, src_lang, tgt_lang, retry=1):
+def translate_with_llama(
+    llm: Any, text: str, src_lang: str, tgt_lang: str, retry: int = 1
+) -> str:
     prompt = (
         f"Translate the following text from {src_lang} to {tgt_lang}.\n"
         f"Only output the translation in {tgt_lang}, do not use any other language or add explanation.\n"
@@ -67,7 +83,7 @@ def translate_with_llama(llm, text, src_lang, tgt_lang, retry=1):
     return result  # fallback
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input_ass", help="輸入 ASS 字幕檔")
     parser.add_argument("output_ass", help="輸出 ASS 字幕檔")
@@ -83,19 +99,23 @@ def main():
     )
     parser.add_argument(
         "--model-repo",
-        default="mradermacher/X-ALMA-13B-Group6-GGUF",
+        default=DEFAULT_LLAMA_MODEL_REPO,
         help="Hugging Face 模型 repo",
     )
     parser.add_argument(
-        "--model-filename", default="X-ALMA-13B-Group6.Q8_0.gguf", help="GGUF 檔名"
+        "--model-filename", default=DEFAULT_LLAMA_MODEL_FILENAME, help="GGUF 檔名"
     )
-    parser.add_argument("--model-dir", default="models", help="模型下載資料夾")
-    parser.add_argument("--n-ctx", type=int, default=2048, help="llama-cpp n_ctx")
-    parser.add_argument("--n-threads", type=int, default=4, help="llama-cpp n_threads")
+    parser.add_argument("--model-dir", default=DEFAULT_MODEL_DIR, help="模型下載資料夾")
+    parser.add_argument(
+        "--n-ctx", type=int, default=DEFAULT_N_CTX, help="llama-cpp n_ctx"
+    )
+    parser.add_argument(
+        "--n-threads", type=int, default=DEFAULT_N_THREADS, help="llama-cpp n_threads"
+    )
     parser.add_argument("--show-text", action="store_true", help="顯示翻譯前後的文字")
     args = parser.parse_args()
 
-    print("下載/載入模型中...")
+    logger.info("下載/載入模型中...")
     model_path = download_model(args.model_repo, args.model_filename, args.model_dir)
 
     llm = Llama(
@@ -119,11 +139,10 @@ def main():
         if args.tgt_lang.lower() == "traditional chinese" and opencc is not None:
             translated = opencc.convert(translated)
         if args.show_text:
-            print("--- 原文 ---")
-            print(merged_text)
-            print("--- 譯文 ---")
-            print(translated)
-            print()
+            logger.info("--- 原文 ---")
+            logger.info(merged_text)
+            logger.info("--- 譯文 ---")
+            logger.info(translated)
         translated_lines = translated.split(" ")
         for i, line in enumerate(lines):
             if i == 0:

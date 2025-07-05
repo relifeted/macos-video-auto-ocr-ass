@@ -1,23 +1,42 @@
 import argparse
 import re
+from typing import Optional, Tuple
 
 import pysubs2
 
+from macos_video_auto_ocr_ass.constants import (
+    ASS_POS_REGEX,
+    DEFAULT_DOWNSCALE,
+    DEFAULT_FONT_SIZE,
+    DEFAULT_INTERVAL,
+    DEFAULT_LLAMA_MODEL_FILENAME,
+    DEFAULT_LLAMA_MODEL_REPO,
+    DEFAULT_MODEL_DIR,
+    DEFAULT_N_CTX,
+    DEFAULT_N_THREADS,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_TEMP_DIR,
+    LOGGER_NAME,
+)
+from macos_video_auto_ocr_ass.logger import get_logger
 
-def parse_pos(text):
-    match = re.search(r"\\pos\((\d+),(\d+)\)", text)
+logger = get_logger(LOGGER_NAME)
+
+
+def parse_pos(text: str) -> Tuple[Optional[int], Optional[int]]:
+    match = re.search(ASS_POS_REGEX, text)
     if match:
-        return int(match.group(1)), int(match.group(2))
+        return int(float(match.group(1))), int(float(match.group(2)))
     return None, None
 
 
 def merge_ass_subs(
-    input_ass,
-    output_ass,
-    position_tolerance=10,
-    time_gap_threshold=500,
-    base_font_size=24,
-):
+    input_ass: str,
+    output_ass: str,
+    position_tolerance: int = 10,
+    time_gap_threshold: int = 500,
+    base_font_size: int = DEFAULT_FONT_SIZE,
+) -> None:
     subs = pysubs2.load(input_ass)
     merged_events = []
     events = sorted(subs.events, key=lambda e: (e.text))
@@ -52,7 +71,7 @@ def merge_ass_subs(
     subs.events = merged_events
     subs.sort()
     subs.save(output_ass)
-    print(f"[INFO] 合併完成，原始事件數: {len(events)}，合併後: {len(merged_events)}")
+    logger.info(f"合併完成，原始事件數: {len(events)}，合併後: {len(merged_events)}")
 
 
 if __name__ == "__main__":
@@ -72,7 +91,10 @@ if __name__ == "__main__":
         help="Max time gap (ms) to merge (default: 500)",
     )
     parser.add_argument(
-        "--base-font-size", type=int, default=24, help="基礎字體大小 (default: 24)"
+        "--base-font-size",
+        type=int,
+        default=DEFAULT_FONT_SIZE,
+        help="基礎字體大小 (default: 24)",
     )
     args = parser.parse_args()
     merge_ass_subs(

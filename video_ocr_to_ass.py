@@ -1,4 +1,5 @@
 import os
+from typing import Any, Generator, List, Optional, Tuple
 
 import numpy as np
 import objc
@@ -16,6 +17,14 @@ from Quartz import (
 )
 from Vision import VNImageRequestHandler, VNRecognizeTextRequest
 
+from macos_video_auto_ocr_ass.constants import (
+    DEFAULT_DOWNSCALE,
+    DEFAULT_FONT_SIZE,
+    DEFAULT_INTERVAL,
+    LOGGER_NAME,
+)
+from macos_video_auto_ocr_ass.logger import get_logger
+
 # Try to import tqdm for progress bar
 try:
     from tqdm.auto import tqdm
@@ -24,9 +33,11 @@ try:
 except ImportError:
     HAS_TQDM = False
 
+logger = get_logger(LOGGER_NAME)
+
 
 # Helper to convert CGImageRef to PIL Image
-def cgimage_to_pil(cg_image):
+def cgimage_to_pil(cg_image: Any) -> Image.Image:
     width = CGImageGetWidth(cg_image)
     height = CGImageGetHeight(cg_image)
     provider = CGImageGetDataProvider(cg_image)
@@ -38,33 +49,33 @@ def cgimage_to_pil(cg_image):
 
 
 def extract_and_downscale_frames(
-    video_path, interval=1.0, downscale=2, quiet=False, scan_rect=None, debug=False
-):
+    video_path: str,
+    interval: float = DEFAULT_INTERVAL,
+    downscale: int = DEFAULT_DOWNSCALE,
+    quiet: bool = False,
+    scan_rect: Optional[Tuple[int, int, int, int]] = None,
+    debug: bool = False,
+) -> Generator[Tuple[float, Image.Image, Tuple[int, int]], None, None]:
     if debug:
-        print(f"[DEBUG] Entering extract_and_downscale_frames for {video_path}")
+        logger.debug(f"Entering extract_and_downscale_frames for {video_path}")
     url = NSURL.fileURLWithPath_(os.path.abspath(video_path))
-    # 不再預先建立 asset，改為每次 frame 都新建
-    # asset = AVAsset.assetWithURL_(url)
-    # duration = asset.duration().value / asset.duration().timescale
-    # 先用一個 asset 取得 duration
     temp_asset = AVAsset.assetWithURL_(url)
     duration = temp_asset.duration().value / temp_asset.duration().timescale
     del temp_asset
     if debug:
-        print(f"[DEBUG] Video duration: {duration} seconds")
+        logger.debug(f"Video duration: {duration} seconds")
     times = [CMTimeMakeWithSeconds(t, 600) for t in np.arange(0, duration, interval)]
     yielded = False
     for idx, (t, cm_time) in enumerate(zip(np.arange(0, duration, interval), times)):
         if t >= duration:
             if debug:
-                print(
-                    f"[DEBUG] Skipping frame at {t:.2f}s (beyond duration {duration:.2f}s)"
+                logger.debug(
+                    f"Skipping frame at {t:.2f}s (beyond duration {duration:.2f}s)"
                 )
             continue
         if debug:
-            print(f"[DEBUG] Attempting to extract frame at {t:.2f}s (index {idx})")
+            logger.debug(f"Attempting to extract frame at {t:.2f}s (index {idx})")
         try:
-            # 每次都新建 asset 和 generator，處理完一幀就釋放
             asset = AVAsset.assetWithURL_(url)
             generator = AVAssetImageGenerator.assetImageGeneratorWithAsset_(asset)
             generator.setAppliesPreferredTrackTransform_(True)
@@ -75,13 +86,13 @@ def extract_and_downscale_frames(
                 cg_image = result
             if cg_image is None:
                 if debug:
-                    print(f"[DEBUG] cg_image is None at {t:.2f}s")
+                    logger.debug(f"cg_image is None at {t:.2f}s")
                 del generator
                 del asset
                 continue
         except Exception as e:
             if debug:
-                print(f"[DEBUG] Failed to extract frame at {t:.2f}s: {e}")
+                logger.debug(f"Failed to extract frame at {t:.2f}s: {e}")
             continue
         pil_image = cgimage_to_pil(cg_image)
         if downscale and downscale > 1:
@@ -90,9 +101,7 @@ def extract_and_downscale_frames(
             )
         crop_offset = (0, 0)
         if scan_rect is not None:
-            # scan_rect: (x, y, width, height) in original resolution
             x, y, w, h = scan_rect
-            # 轉換到 downscaled 幀座標
             x_ = int(x / downscale)
             y_ = int(y / downscale)
             w_ = int(w / downscale)
@@ -100,22 +109,26 @@ def extract_and_downscale_frames(
             pil_image = pil_image.crop((x_, y_, x_ + w_, y_ + h_))
             crop_offset = (x_, y_)
         if debug:
-            print(
-                f"[DEBUG] Extracted and downscaled frame at {t:.2f}s, PIL image size: {getattr(pil_image, 'size', None)}, mode: {getattr(pil_image, 'mode', None)}, crop_offset: {crop_offset}"
+            logger.debug(
+                f"Extracted and downscaled frame at {t:.2f}s, PIL image size: {getattr(pil_image, 'size', None)}, mode: {getattr(pil_image, 'mode', None)}, crop_offset: {crop_offset}"
             )
         yielded = True
         yield t, pil_image, crop_offset
-        # 顯式釋放 generator 和 asset
         del generator
         del asset
     if not yielded and debug:
-        print("[DEBUG] No frames were yielded from extract_and_downscale_frames!")
+        logger.debug("No frames were yielded from extract_and_downscale_frames!")
 
 
-def ocr_image(image, recognition_languages=None, quiet=False, debug=False):
+def ocr_image(
+    image: Image.Image,
+    recognition_languages: Optional[List[str]] = None,
+    quiet: bool = False,
+    debug: bool = False,
+) -> List[Tuple[str, Any]]:
     if debug:
-        print(
-            f"[DEBUG] Entering ocr_image, image type: {type(image)}, size: {getattr(image, 'size', None)}"
+        logger.debug(
+            f"Entering ocr_image, image type: {type(image)}, size: {getattr(image, 'size', None)}"
         )
     import io
 
@@ -128,7 +141,7 @@ def ocr_image(image, recognition_languages=None, quiet=False, debug=False):
     handler = VNImageRequestHandler.alloc().initWithCIImage_options_(ci_image, None)
     results = []
 
-    def handler_block(request, error):
+    def handler_block(request: Any, error: Any) -> None:
         if error is not None:
             return
         for obs in request.results():
@@ -138,154 +151,135 @@ def ocr_image(image, recognition_languages=None, quiet=False, debug=False):
             results.append((text, bbox))
 
     request = VNRecognizeTextRequest.alloc().initWithCompletionHandler_(handler_block)
-    # 預設啟用自動語言偵測
     request.setAutomaticallyDetectsLanguage_(True)
     if recognition_languages:
         if debug:
-            print(f"[DEBUG] Setting recognition languages: {recognition_languages}")
+            logger.debug(f"Setting recognition languages: {recognition_languages}")
         request.setRecognitionLanguages_(recognition_languages)
     handler.performRequests_error_([request], None)
     return results
 
 
 def add_ocr_to_subs(
-    subs,
-    t,
-    frame,
-    ocr_results,
-    interval,
-    x_offset=0,
-    original_width=None,
-    original_height=None,
-    downscale=1,
-    base_font_size=24,
-    quiet=False,
-    debug=False,
-):
-    # 強制所有 Style 的 Alignment 為 5 (中心)
+    subs: Any,
+    t: float,
+    frame: Image.Image,
+    ocr_results: List[Tuple[str, Any]],
+    interval: float,
+    x_offset: int = 0,
+    original_width: Optional[int] = None,
+    original_height: Optional[int] = None,
+    downscale: int = 1,
+    base_font_size: int = DEFAULT_FONT_SIZE,
+    quiet: bool = False,
+    debug: bool = False,
+) -> None:
     for style in subs.styles.values():
         style.alignment = 5
         style.marginl = 0
         style.marginr = 0
         style.marginv = 0
-        # 添加更多樣式設置以確保位置準確
-        style.borderstyle = 1  # 1 = 外邊框
-        style.outline = 0  # 外邊框寬度
-        style.shadow = 0  # 陰影寬度
-        style.margin_t = 0  # 頂部邊距
-        style.margin_b = 0  # 底部邊距
+        style.borderstyle = 1
+        style.outline = 0
+        style.shadow = 0
+        style.margin_t = 0
+        style.margin_b = 0
     start = int(round(t * 1000))
     end = int(round((t + interval) * 1000))
     frame_width, frame_height = frame.size
 
-    # 如果沒有提供原始分辨率，使用幀的分辨率
     if original_width is None:
         original_width = frame_width
     if original_height is None:
         original_height = frame_height
 
-    # 計算字體大小（根據 downscale 比例調整）
     font_size = int(base_font_size * downscale)
 
     for text, bbox in ocr_results:
         text = text.strip()
         if text and bbox is not None:
-            # Vision: 左下為原點, 歸一化 (0-1); ASS: 左上為原點, 使用 PlayRes 座標系統
             x_norm = bbox.origin.x
             y_norm = bbox.origin.y
             w_norm = bbox.size.width
             h_norm = bbox.size.height
 
-            # 計算 Vision 框中心點（歸一化座標）
             center_x_norm = x_norm + w_norm / 2
             center_y_norm = y_norm + h_norm / 2
 
-            # 轉換到原始視頻分辨率（考慮 downscaling）
-            # 由於 Vision 的歸一化是基於輸入圖像的，而輸入圖像是 downscaled 的
-            # 所以我們需要先轉換到 downscaled 座標，再轉換到原始座標
             x_crop = center_x_norm * frame_width
             y_crop = center_y_norm * frame_height
 
-            # 轉換到原始視頻分辨率
             x = int(x_crop * downscale) + x_offset
-            y_vision = y_crop * downscale  # Vision: 下到上
-            y = int(original_height - y_vision)  # ASS: 上到下
+            y_vision = y_crop * downscale
+            y = int(original_height - y_vision)
 
             pos_tag = f"{{\\pos({x},{y})\\fs{font_size}}}"
             if debug:
-                print(
-                    f"[DEBUG] OCR text '{text}' at normalized bbox: x={x_norm:.3f}, y={y_norm:.3f}, w={w_norm:.3f}, h={h_norm:.3f}"
+                logger.debug(
+                    f"OCR text '{text}' at normalized bbox: x={x_norm:.3f}, y={y_norm:.3f}, w={w_norm:.3f}, h={h_norm:.3f}"
                 )
-                print(
-                    f"[DEBUG] Frame size: {frame_width}x{frame_height}, Original size: {original_width}x{original_height}, Downscale: {downscale}"
+                logger.debug(
+                    f"Frame size: {frame_width}x{frame_height}, Original size: {original_width}x{original_height}, Downscale: {downscale}"
                 )
-                print(
-                    f"[DEBUG] Converted to pixel position: x={x} (with offset {x_offset}), y={y}, font_size: {font_size}"
+                logger.debug(
+                    f"Converted to pixel position: x={x} (with offset {x_offset}), y={y}, font_size: {font_size}"
                 )
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=f"{pos_tag}{text}"))
         elif text:
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=text))
 
 
-def merge_continuous_events(subs, position_tolerance=10, time_gap_threshold=500):
-    """
-    合併連續的相同文字事件
-    """
+def merge_continuous_events(
+    subs: Any, position_tolerance: int = 10, time_gap_threshold: int = 500
+) -> int:
+    """合併連續的相同文字事件"""
     if not subs.events:
-        return
+        return 0
 
-    # 按時間排序
     subs.events.sort(key=lambda x: x.start)
 
     merged_events = []
     current_event = subs.events[0].copy()
 
     for next_event in subs.events[1:]:
-        # 檢查是否為相同文字且時間連續
         if (
             current_event.text == next_event.text
             and current_event.end >= next_event.start - time_gap_threshold
-        ):  # 允許指定間隙
-            # 延長當前事件的結束時間
+        ):
             current_event.end = max(current_event.end, next_event.end)
         else:
-            # 添加當前事件並開始新事件
             merged_events.append(current_event)
             current_event = next_event.copy()
 
-    # 添加最後一個事件
     merged_events.append(current_event)
-
-    # 更新字幕檔案的事件
     subs.events = merged_events
     return len(subs.events)
 
 
 def main(
-    video_path,
-    output_ass,
-    interval=1.0,
-    recognition_languages=None,
-    quiet=False,
-    downscale=2,
-    chunk_size=None,  # ignored, for compatibility
-    x_offset=0,  # X 軸偏移補償
-    scan_rect=None,  # 掃描區域 (x, y, w, h)
-    base_font_size=24,  # 基礎字體大小
-    merge_events=True,  # 是否合併連續事件
-    position_tolerance=10,  # 位置容差（像素）
-    time_gap_threshold=500,  # 時間間隙閾值（毫秒）
-):
+    video_path: str,
+    output_ass: str,
+    interval: float = DEFAULT_INTERVAL,
+    recognition_languages: Optional[List[str]] = None,
+    quiet: bool = False,
+    downscale: int = DEFAULT_DOWNSCALE,
+    chunk_size: Optional[float] = None,  # ignored, for compatibility
+    x_offset: int = 0,  # X 軸偏移補償
+    scan_rect: Optional[Tuple[int, int, int, int]] = None,  # 掃描區域 (x, y, w, h)
+    base_font_size: int = DEFAULT_FONT_SIZE,  # 基礎字體大小
+    merge_events: bool = True,  # 是否合併連續事件
+    position_tolerance: int = 10,  # 位置容差（像素）
+    time_gap_threshold: int = 500,  # 時間間隙閾值（毫秒）
+) -> None:
     debug = not quiet
     if debug:
-        print(
-            f"[DEBUG] Starting main with video_path={video_path}, output_ass={output_ass}, interval={interval}, recognition_languages={recognition_languages}, downscale={downscale}, x_offset={x_offset}, base_font_size={base_font_size}, merge_events={merge_events}"
+        logger.debug(
+            f"Starting main with video_path={video_path}, output_ass={output_ass}, interval={interval}, recognition_languages={recognition_languages}, downscale={downscale}, x_offset={x_offset}, base_font_size={base_font_size}, merge_events={merge_events}"
         )
     subs = pysubs2.SSAFile()
 
-    # 設置默認樣式
     default_style = pysubs2.SSAStyle()
-    default_style.alignment = 5  # 中心對齊
+    default_style.alignment = 5
     default_style.marginl = 0
     default_style.marginr = 0
     default_style.marginv = 0
@@ -296,13 +290,11 @@ def main(
     default_style.margin_b = 0
     subs.styles["Default"] = default_style
 
-    # Get total frames for progress bar
     url = NSURL.fileURLWithPath_(os.path.abspath(video_path))
     asset = AVAsset.assetWithURL_(url)
     duration = asset.duration().value / asset.duration().timescale
     total_frames = int(duration // interval)
 
-    # 獲取視頻的實際分辨率並設置 PlayRes
     original_width = None
     original_height = None
     tracks = asset.tracks()
@@ -317,10 +309,9 @@ def main(
             original_width = int(natural_size.width)
             original_height = int(natural_size.height)
             if not quiet:
-                print(
-                    f"[DEBUG] Video natural size: {original_width} x {original_height}"
+                logger.debug(
+                    f"Video natural size: {original_width} x {original_height}"
                 )
-            # 設置 PlayRes 為視頻的實際分辨率
             subs.info["PlayResX"] = original_width
             subs.info["PlayResY"] = original_height
 
@@ -336,7 +327,7 @@ def main(
             frame, recognition_languages=recognition_languages, quiet=quiet, debug=debug
         )
         if debug:
-            print(f"[DEBUG] OCR at {t:.2f}s: {repr(ocr_results)}")
+            logger.debug(f"OCR at {t:.2f}s: {repr(ocr_results)}")
         if ocr_results:
             add_ocr_to_subs(
                 subs,
@@ -354,16 +345,15 @@ def main(
             )
         del frame
     if frame_count == 0 and debug:
-        print("[DEBUG] No frames processed!")
+        logger.debug("No frames processed!")
 
-    # 合併連續事件
     if merge_events and subs.events:
         original_count = len(subs.events)
         merged_count = merge_continuous_events(
             subs, position_tolerance, time_gap_threshold
         )
         if not quiet:
-            print(f"[DEBUG] Merged events: {original_count} -> {merged_count}")
+            logger.debug(f"Merged events: {original_count} -> {merged_count}")
 
     subs.sort()
     subs.save(output_ass)
@@ -380,7 +370,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interval",
         type=float,
-        default=1.0,
+        default=DEFAULT_INTERVAL,
         help="Frame interval in seconds (default: 1.0)",
     )
     parser.add_argument(
@@ -393,7 +383,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--downscale",
         type=int,
-        default=2,
+        default=DEFAULT_DOWNSCALE,
         help="Downscale factor for frames before OCR (default: 2)",
     )
     parser.add_argument(
@@ -414,7 +404,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--base-font-size",
         type=int,
-        default=24,
+        default=DEFAULT_FONT_SIZE,
         help="Base font size (will be multiplied by downscale factor) (default: 24)",
     )
     parser.add_argument(

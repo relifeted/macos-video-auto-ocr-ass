@@ -1,5 +1,6 @@
 import argparse
 import os
+from typing import Any, Generator, List, Optional, Tuple
 
 import numpy as np
 from AVFoundation import AVAsset, AVAssetImageGenerator
@@ -15,6 +16,22 @@ from Quartz import (
 )
 from Vision import VNImageRequestHandler, VNRecognizeTextRequest
 
+from macos_video_auto_ocr_ass.constants import (
+    DEFAULT_DOWNSCALE,
+    DEFAULT_INTERVAL,
+    HEATMAP_ALPHA_MULTIPLIER,
+    HEATMAP_DEFAULT_CONTRAST_BOOST,
+    HEATMAP_DEFAULT_FONT_SIZE,
+    HEATMAP_DEFAULT_GRID_INTERVAL,
+    HEATMAP_GREEN_MULTIPLIER,
+    HEATMAP_GRID_COLOR,
+    HEATMAP_LABEL_BG_COLOR,
+    HEATMAP_LABEL_TEXT_COLOR,
+    HEATMAP_WHITE_BG_COLOR,
+    LOGGER_NAME,
+)
+from macos_video_auto_ocr_ass.logger import get_logger
+
 # 嘗試匯入 tqdm
 try:
     from tqdm.auto import tqdm
@@ -23,10 +40,11 @@ try:
 except ImportError:
     HAS_TQDM = False
 
+logger = get_logger(LOGGER_NAME)
+
+
 # Helper to convert CGImageRef to PIL Image
-
-
-def cgimage_to_pil(cg_image):
+def cgimage_to_pil(cg_image: Any) -> Image.Image:
     width = CGImageGetWidth(cg_image)
     height = CGImageGetHeight(cg_image)
     provider = CGImageGetDataProvider(cg_image)
@@ -37,7 +55,12 @@ def cgimage_to_pil(cg_image):
     return Image.fromarray(arr[..., :3])
 
 
-def extract_frames(video_path, interval=1.0, downscale=2, quiet=False):
+def extract_frames(
+    video_path: str,
+    interval: float = DEFAULT_INTERVAL,
+    downscale: int = DEFAULT_DOWNSCALE,
+    quiet: bool = False,
+) -> Generator[Image.Image, None, None]:
     url = NSURL.fileURLWithPath_(os.path.abspath(video_path))
     asset = AVAsset.assetWithURL_(url)
     generator = AVAssetImageGenerator.assetImageGeneratorWithAsset_(asset)
@@ -54,7 +77,7 @@ def extract_frames(video_path, interval=1.0, downscale=2, quiet=False):
                 continue
         except Exception as e:
             if not quiet:
-                print(f"[DEBUG] Failed to extract frame at {t:.2f}s: {e}")
+                logger.debug(f"Failed to extract frame at {t:.2f}s: {e}")
             continue
         pil_image = cgimage_to_pil(cg_image)
         if downscale and downscale > 1:
@@ -64,7 +87,9 @@ def extract_frames(video_path, interval=1.0, downscale=2, quiet=False):
         yield pil_image
 
 
-def ocr_image(image, recognition_languages=None):
+def ocr_image(
+    image: Image.Image, recognition_languages: Optional[List[str]] = None
+) -> List[Tuple[str, Any]]:
     import io
 
     from Cocoa import NSData
@@ -76,7 +101,7 @@ def ocr_image(image, recognition_languages=None):
     handler = VNImageRequestHandler.alloc().initWithCIImage_options_(ci_image, None)
     results = []
 
-    def handler_block(request, error):
+    def handler_block(request: Any, error: Any) -> None:
         if error is not None:
             return
         for obs in request.results():
@@ -86,7 +111,6 @@ def ocr_image(image, recognition_languages=None):
             results.append((text, bbox))
 
     request = VNRecognizeTextRequest.alloc().initWithCompletionHandler_(handler_block)
-    # 預設啟用自動語言偵測
     request.setAutomaticallyDetectsLanguage_(True)
     if recognition_languages:
         request.setRecognitionLanguages_(recognition_languages)
@@ -94,17 +118,15 @@ def ocr_image(image, recognition_languages=None):
     return results
 
 
-def create_heatmap_image(heatmap, contrast_boost=1.0):
-    """
-    創建白底綠色熱區圖
-    """
+def create_heatmap_image(
+    heatmap: np.ndarray, contrast_boost: float = HEATMAP_DEFAULT_CONTRAST_BOOST
+) -> Image.Image:
+    """創建白底綠色熱區圖"""
     maxv = np.max(heatmap)
     if maxv == 0:
         maxv = 1
 
-    # 應用對比度增強
     if contrast_boost > 1.0:
-        # 使用冪次函數增強對比度
         heatmap_enhanced = np.power(heatmap / maxv, 1 / contrast_boost) * maxv
     else:
         heatmap_enhanced = heatmap
@@ -112,69 +134,56 @@ def create_heatmap_image(heatmap, contrast_boost=1.0):
     norm = (heatmap_enhanced / maxv * 255).astype(np.uint8)
     heat_img = Image.fromarray(norm, mode="L").convert("RGBA")
 
-    # 白底綠色熱區
     r, g, b, a = heat_img.split()
-    # 創建白底
-    white_bg = Image.new("RGBA", heat_img.size, (255, 255, 255, 255))
-    # 綠色熱區
+    white_bg = Image.new("RGBA", heat_img.size, HEATMAP_WHITE_BG_COLOR)
     green_heat = Image.merge(
         "RGBA",
         (
             r.point(lambda v: 0),
-            g.point(lambda v: min(255, int(v * 1.5))),  # 加強綠色
+            g.point(lambda v: min(255, int(v * HEATMAP_GREEN_MULTIPLIER))),
             b.point(lambda v: 0),
-            a.point(lambda v: int(v * 0.8)),
+            a.point(lambda v: int(v * HEATMAP_ALPHA_MULTIPLIER)),
         ),
     )
-    # 合成
     heat_img = Image.alpha_composite(white_bg, green_heat)
 
     return heat_img
 
 
-def draw_grid_and_labels(img, grid_interval=300):
+def draw_grid_and_labels(
+    img: Image.Image, grid_interval: int = HEATMAP_DEFAULT_GRID_INTERVAL
+) -> Image.Image:
     draw = ImageDraw.Draw(img)
     width, height = img.size
 
-    # 白底上的格線和標籤顏色
-    grid_color = (100, 100, 100, 200)  # 深灰色
-    label_bg_color = (0, 0, 0, 180)  # 黑色背景
-    label_text_color = (255, 255, 255, 255)  # 白色文字
-
-    # 嘗試載入系統字體
     try:
-        font = ImageFont.truetype("Arial.ttf", 24)
+        font = ImageFont.truetype("Arial.ttf", HEATMAP_DEFAULT_FONT_SIZE)
     except Exception:
         font = ImageFont.load_default()
 
-    # 畫垂直格線與 x 座標
     for x in range(0, width, grid_interval):
-        draw.line([(x, 0), (x, height)], fill=grid_color, width=1)
-        # 標註 x 座標
-        draw.rectangle([(x + 2, 2), (x + 62, 32)], fill=label_bg_color)
-        draw.text((x + 5, 5), str(x), fill=label_text_color, font=font)
+        draw.line([(x, 0), (x, height)], fill=HEATMAP_GRID_COLOR, width=1)
+        draw.rectangle([(x + 2, 2), (x + 62, 32)], fill=HEATMAP_LABEL_BG_COLOR)
+        draw.text((x + 5, 5), str(x), fill=HEATMAP_LABEL_TEXT_COLOR, font=font)
 
-    # 畫水平格線與 y 座標
     for y in range(0, height, grid_interval):
-        draw.line([(0, y), (width, y)], fill=grid_color, width=1)
-        # 標註 y 座標
-        draw.rectangle([(2, y + 2), (62, y + 32)], fill=label_bg_color)
-        draw.text((5, y + 5), str(y), fill=label_text_color, font=font)
+        draw.line([(0, y), (width, y)], fill=HEATMAP_GRID_COLOR, width=1)
+        draw.rectangle([(2, y + 2), (62, y + 32)], fill=HEATMAP_LABEL_BG_COLOR)
+        draw.text((5, y + 5), str(y), fill=HEATMAP_LABEL_TEXT_COLOR, font=font)
 
     return img
 
 
 def main(
-    video_path,
-    output_png,
-    interval=1.0,
-    downscale=2,
-    recognition_languages=None,
-    quiet=False,
-    grid_interval=300,
-    contrast_boost=1.0,
-):
-    # 取得原始分辨率
+    video_path: str,
+    output_png: str,
+    interval: float = DEFAULT_INTERVAL,
+    downscale: int = DEFAULT_DOWNSCALE,
+    recognition_languages: Optional[List[str]] = None,
+    quiet: bool = False,
+    grid_interval: int = HEATMAP_DEFAULT_GRID_INTERVAL,
+    contrast_boost: float = HEATMAP_DEFAULT_CONTRAST_BOOST,
+) -> None:
     url = NSURL.fileURLWithPath_(os.path.abspath(video_path))
     asset = AVAsset.assetWithURL_(url)
     tracks = asset.tracks()
@@ -193,11 +202,9 @@ def main(
     if original_width is None or original_height is None:
         raise RuntimeError("Cannot determine video resolution.")
 
-    # 計算總 frame 數
     duration = asset.duration().value / asset.duration().timescale
     total_frames = int(duration // interval)
 
-    # 建立累積熱區圖
     heatmap = np.zeros((original_height, original_width), dtype=np.uint32)
 
     frame_iter = extract_frames(video_path, interval, downscale, quiet=quiet)
@@ -212,35 +219,27 @@ def main(
                 y_norm = bbox.origin.y
                 w_norm = bbox.size.width
                 h_norm = bbox.size.height
-                # 轉成 downscaled 幀像素座標
                 x0_downscaled = x_norm * frame_width
                 y0_downscaled = y_norm * frame_height
                 x1_downscaled = (x_norm + w_norm) * frame_width
                 y1_downscaled = (y_norm + h_norm) * frame_height
-                # 轉回原始分辨率
                 x0 = int(x0_downscaled * downscale)
                 y0 = int(y0_downscaled * downscale)
                 x1 = int(x1_downscaled * downscale)
                 y1 = int(y1_downscaled * downscale)
-                # y 軸反轉（Vision 左下，ASS/圖像 左上）
                 y0_img = original_height - y1
                 y1_img = original_height - y0
-                # 限制在圖像範圍內
                 x0 = max(0, min(original_width - 1, x0))
                 x1 = max(0, min(original_width - 1, x1))
                 y0_img = max(0, min(original_height - 1, y0_img))
                 y1_img = max(0, min(original_height - 1, y1_img))
-                # 疊加熱區
                 heatmap[y0_img:y1_img, x0:x1] += 1
 
-    # 創建熱區圖
     heat_img = create_heatmap_image(heatmap, contrast_boost)
-
-    # 加上格線與座標標註
     heat_img = draw_grid_and_labels(heat_img, grid_interval=grid_interval)
     heat_img.save(output_png)
-    print(
-        f"[INFO] Heatmap saved to {output_png} (white background with green heatmap, contrast boost: {contrast_boost})"
+    logger.info(
+        f"Heatmap saved to {output_png} (white background with green heatmap, contrast boost: {contrast_boost})"
     )
 
 
@@ -253,13 +252,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interval",
         type=float,
-        default=1.0,
+        default=DEFAULT_INTERVAL,
         help="Frame interval in seconds (default: 1.0)",
     )
     parser.add_argument(
         "--downscale",
         type=int,
-        default=2,
+        default=DEFAULT_DOWNSCALE,
         help="Downscale factor for frames before OCR (default: 2)",
     )
     parser.add_argument(
@@ -272,13 +271,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--grid-interval",
         type=int,
-        default=300,
+        default=HEATMAP_DEFAULT_GRID_INTERVAL,
         help="Grid interval in pixels for coordinate labels (default: 300)",
     )
     parser.add_argument(
         "--contrast-boost",
         type=float,
-        default=1.0,
+        default=HEATMAP_DEFAULT_CONTRAST_BOOST,
         help="Contrast boost factor (1.0=normal, 2.0=high contrast) (default: 1.0)",
     )
     args = parser.parse_args()

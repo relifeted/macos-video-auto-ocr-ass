@@ -14,8 +14,19 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import pysubs2
+
+from macos_video_auto_ocr_ass.constants import (
+    DEFAULT_DOWNSCALE,
+    DEFAULT_FONT_SIZE,
+    DEFAULT_INTERVAL,
+    LOGGER_NAME,
+    VIDEO_OCR_DEFAULT_CHUNK_SIZE,
+    VIDEO_OCR_DEFAULT_DOWNSCALE_OBJC,
+)
+from macos_video_auto_ocr_ass.logger import get_logger
 
 # Try to import tqdm for progress bar
 try:
@@ -25,51 +36,48 @@ try:
 except ImportError:
     HAS_TQDM = False
 
+logger = get_logger(LOGGER_NAME)
+
 
 def run_video_ocr_to_json(
-    video_path,
-    output_json,
-    interval=1.0,
-    downscale=1,
-    scan_rect=None,
-    languages=None,
-    quiet=False,
-    start_time=None,
-    end_time=None,
-    show_progress=False,
-):
+    video_path: str,
+    output_json: str,
+    interval: float = DEFAULT_INTERVAL,
+    downscale: int = VIDEO_OCR_DEFAULT_DOWNSCALE_OBJC,
+    scan_rect: Optional[Tuple[int, int, int, int]] = None,
+    languages: Optional[List[str]] = None,
+    quiet: bool = False,
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None,
+    show_progress: bool = False,
+) -> None:
     """使用 Objective-C 程式進行影片 OCR 並輸出 JSON"""
     if not quiet:
-        print(f"[DEBUG] Using Objective-C OCR for {video_path}")
+        logger.debug(f"Using Objective-C OCR for {video_path}")
 
-    # 確保 video_ocr_to_json 可執行檔存在
     ocr_path = "./video_ocr_to_json"
     if not os.path.exists(ocr_path):
         raise FileNotFoundError(f"Objective-C OCR tool not found: {ocr_path}")
 
-    # 建立命令
     cmd = [ocr_path, video_path, output_json, str(interval), str(downscale)]
 
-    # 添加掃描區域參數（如果有）
     if scan_rect:
         scan_rect_str = ",".join(map(str, scan_rect))
         cmd.append(scan_rect_str)
-    elif len(cmd) == 5:  # 如果有 downscale 但沒有 scan_rect，需要添加預設值
+    elif len(cmd) == 5:
         cmd.append("0,0,1,1")
 
-    # 添加語言參數（如果有）
     if languages:
         if isinstance(languages, (list, tuple)):
             languages_str = ",".join(languages)
         else:
             languages_str = languages
-        if len(cmd) == 5:  # 需要先添加預設的 scan_rect
+        if len(cmd) == 5:
             cmd.append("0,0,1,1")
         cmd.append(languages_str)
     else:
-        cmd.append("__AUTO__")  # 傳遞特殊字串，代表自動偵測語言
+        cmd.append("__AUTO__")
 
-    # 新增 start_time, end_time, show_progress
     if start_time is not None:
         cmd.append(str(start_time))
     if end_time is not None:
@@ -77,54 +85,50 @@ def run_video_ocr_to_json(
     cmd.append("1" if show_progress else "0")
 
     if not quiet:
-        print(f"[DEBUG] Running command: {' '.join(cmd)}")
+        logger.debug(f"Running command: {' '.join(cmd)}")
 
-    # 改用 Popen 直接 relay stdout/stderr
     try:
         proc = subprocess.Popen(cmd)
         proc.communicate()
         if proc.returncode != 0:
             raise subprocess.CalledProcessError(proc.returncode, cmd)
     except subprocess.CalledProcessError as e:
-        print(f"[ERROR] Objective-C OCR failed: {e}")
+        logger.error(f"Objective-C OCR failed: {e}")
         raise
 
 
 def add_ocr_to_subs(
-    subs,
-    frame_data,
-    original_width=None,
-    original_height=None,
-    x_offset=0,
-    base_font_size=24,
-    quiet=False,
-    debug=False,
-):
+    subs: Any,
+    frame_data: Dict[str, Any],
+    original_width: Optional[int] = None,
+    original_height: Optional[int] = None,
+    x_offset: int = 0,
+    base_font_size: int = DEFAULT_FONT_SIZE,
+    quiet: bool = False,
+    debug: bool = False,
+) -> None:
     """將 OCR 結果添加到字幕檔案"""
-    # 強制所有 Style 的 Alignment 為 5 (中心)
     for style in subs.styles.values():
         style.alignment = 5
         style.marginl = 0
         style.marginr = 0
         style.marginv = 0
-        # 添加更多樣式設置以確保位置準確
-        style.borderstyle = 1  # 1 = 外邊框
-        style.outline = 0  # 外邊框寬度
-        style.shadow = 0  # 陰影寬度
-        style.margin_t = 0  # 頂部邊距
-        style.margin_b = 0  # 底部邊距
+        style.borderstyle = 1
+        style.outline = 0
+        style.shadow = 0
+        style.margin_t = 0
+        style.margin_b = 0
 
     timestamp = frame_data["timestamp"]
     start = int(round(timestamp * 1000))
-    end = int(round((timestamp + 1.0) * 1000))  # 假設間隔為 1 秒
+    end = int(round((timestamp + 1.0) * 1000))
 
     for result in frame_data["results"]:
         text = result["text"].strip()
-        bbox = result["bbox"]  # [x, y, width, height]
+        bbox = result["bbox"]
 
-        # Debug print bbox 原始值
         if debug:
-            print(f"[DEBUG] bbox 原始值: {bbox}")
+            logger.debug(f"bbox 原始值: {bbox}")
 
         if text:
             x_raw = bbox[0]
@@ -132,40 +136,37 @@ def add_ocr_to_subs(
             w_raw = bbox[2]
             h_raw = bbox[3]
 
-            # 判斷 bbox 是否為 0~1 區間（比例），否則視為像素座標
             is_normalized = all(0.0 <= v <= 1.0 for v in [x_raw, y_raw, w_raw, h_raw])
 
             if is_normalized:
-                # 歸一化比例，需乘原始解析度
                 center_x_norm = x_raw + w_raw / 2
                 center_y_norm = y_raw + h_raw / 2
                 x = int(center_x_norm * original_width) + x_offset
                 y_vision = center_y_norm * original_height
                 y = int(original_height - y_vision)
                 if debug:
-                    print(
-                        f"[DEBUG] bbox 為比例，轉換後 x={x}, y={y} (原始寬高 {original_width}x{original_height})"
+                    logger.debug(
+                        f"bbox 為比例，轉換後 x={x}, y={y} (原始寬高 {original_width}x{original_height})"
                     )
             else:
-                # 已是像素座標，直接使用
                 center_x = x_raw + w_raw / 2
                 center_y = y_raw + h_raw / 2
                 x = int(center_x) + x_offset
                 y = int(original_height - center_y)
                 if debug:
-                    print(
-                        f"[DEBUG] bbox 為像素座標，直接使用 x={x}, y={y} (原始寬高 {original_width}x{original_height})"
+                    logger.debug(
+                        f"bbox 為像素座標，直接使用 x={x}, y={y} (原始寬高 {original_width}x{original_height})"
                     )
 
             pos_tag = f"{{\\pos({x},{y})}}"
             if debug:
-                print(f"[DEBUG] 產生 pos 標籤: {pos_tag} 文字: {text}")
+                logger.debug(f"產生 pos 標籤: {pos_tag} 文字: {text}")
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=f"{pos_tag}{text}"))
         elif text:
             subs.append(pysubs2.SSAEvent(start=start, end=end, text=text))
 
 
-def parse_pos(text):
+def parse_pos(text: str) -> Tuple[Optional[int], Optional[int]]:
     match = re.search(r"\\pos\((\d+),(\d+)\)", text)
     if match:
         return int(match.group(1)), int(match.group(2))
@@ -173,11 +174,11 @@ def parse_pos(text):
 
 
 def merge_ass_events(
-    subs,
-    position_tolerance=10,
-    time_gap_threshold=500,
-    base_font_size=24,
-):
+    subs: Any,
+    position_tolerance: int = 10,
+    time_gap_threshold: int = 500,
+    base_font_size: int = DEFAULT_FONT_SIZE,
+) -> int:
     merged_events = []
     events = sorted(subs.events, key=lambda e: (e.text))
     if not events:
@@ -207,7 +208,7 @@ def merge_ass_events(
     return len(merged_events)
 
 
-def get_video_duration(video_path):
+def get_video_duration(video_path: str) -> float:
     """取得影片長度（秒）"""
     probe_cmd = [
         "ffprobe",
@@ -226,32 +227,30 @@ def get_video_duration(video_path):
 
 
 def main(
-    video_path,
-    output_ass,
-    interval=1.0,
-    recognition_languages=None,
-    quiet=False,
-    show_progress=False,
-    downscale=1,
-    chunk_size=300.0,  # 每段長度（秒）
-    x_offset=0,
-    scan_rect=None,
-    base_font_size=24,
-    merge_events=True,
-    position_tolerance=10,
-    time_gap_threshold=500,
-):
+    video_path: str,
+    output_ass: str,
+    interval: float = DEFAULT_INTERVAL,
+    recognition_languages: Optional[List[str]] = None,
+    quiet: bool = False,
+    show_progress: bool = False,
+    downscale: int = VIDEO_OCR_DEFAULT_DOWNSCALE_OBJC,
+    chunk_size: float = VIDEO_OCR_DEFAULT_CHUNK_SIZE,
+    x_offset: int = 0,
+    scan_rect: Optional[Tuple[int, int, int, int]] = None,
+    base_font_size: int = DEFAULT_FONT_SIZE,
+    merge_events: bool = True,
+    position_tolerance: int = 10,
+    time_gap_threshold: int = 500,
+) -> None:
     debug = not quiet
     if debug:
-        print(f"[DEBUG] Processing video: {video_path}")
-        print(f"[DEBUG] Output ASS: {output_ass}")
+        logger.debug(f"Processing video: {video_path}")
+        logger.debug(f"Output ASS: {output_ass}")
 
-    # 取得影片長度
     duration = get_video_duration(video_path)
     if debug:
-        print(f"[DEBUG] Video duration: {duration} seconds")
+        logger.debug(f"Video duration: {duration} seconds")
 
-    # 分段
     num_chunks = math.ceil(duration / chunk_size)
     temp_json_files = []
     for i in range(num_chunks):
@@ -259,8 +258,8 @@ def main(
         end_time = min((i + 1) * chunk_size, duration)
         if start_time >= end_time:
             if not quiet:
-                print(
-                    f"[DEBUG] Skip chunk {i}: start_time ({start_time}) >= end_time ({end_time})"
+                logger.debug(
+                    f"Skip chunk {i}: start_time ({start_time}) >= end_time ({end_time})"
                 )
             continue
         temp_json = tempfile.NamedTemporaryFile(suffix=f"_chunk{i}.json", delete=False)
@@ -279,14 +278,12 @@ def main(
             show_progress=show_progress,
         )
 
-    # 合併所有 JSON
     ocr_results = []
     for json_file in temp_json_files:
         with open(json_file, "r") as f:
             ocr_results.extend(json.load(f))
         os.unlink(json_file)
 
-    # 獲取影片尺寸
     probe_cmd = [
         "ffprobe",
         "-v",
@@ -304,18 +301,16 @@ def main(
     original_width = video_info["streams"][0]["width"]
     original_height = video_info["streams"][0]["height"]
 
-    # 建立字幕檔案
     subs = pysubs2.SSAFile()
     style = pysubs2.SSAStyle(
         fontname="Arial",
         fontsize=base_font_size,
-        primarycolor=pysubs2.Color(255, 255, 255, 0),  # 白色
-        outlinecolor=pysubs2.Color(0, 0, 0, 0),  # 黑色邊框
+        primarycolor=pysubs2.Color(255, 255, 255, 0),
+        outlinecolor=pysubs2.Color(0, 0, 0, 0),
         bold=True,
     )
     subs.styles["Default"] = style
 
-    # 處理每一幀的 OCR 結果
     if HAS_TQDM and not quiet:
         ocr_results = tqdm(ocr_results, desc="Processing frames")
 
@@ -331,10 +326,9 @@ def main(
             debug=debug,
         )
 
-    # 合併連續事件
     if merge_events:
         if not quiet:
-            print("[INFO] Merging continuous events (pos+text+time)...")
+            logger.info("Merging continuous events (pos+text+time)...")
         num_events = merge_ass_events(
             subs,
             position_tolerance=position_tolerance,
@@ -342,12 +336,11 @@ def main(
             base_font_size=base_font_size,
         )
         if not quiet:
-            print(f"[INFO] Final number of events: {num_events}")
+            logger.info(f"Final number of events: {num_events}")
 
-    # 保存字幕檔案
     subs.save(output_ass)
     if not quiet:
-        print(f"[INFO] Subtitle file saved to: {output_ass}")
+        logger.info(f"Subtitle file saved to: {output_ass}")
 
 
 if __name__ == "__main__":
@@ -361,7 +354,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interval",
         type=float,
-        default=1.0,
+        default=DEFAULT_INTERVAL,
         help="Time interval between frames in seconds (default: 1.0)",
     )
     parser.add_argument(
@@ -373,7 +366,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--downscale",
         type=int,
-        default=1,
+        default=VIDEO_OCR_DEFAULT_DOWNSCALE_OBJC,
         help="Downscale factor for frames before OCR (default: 1)",
     )
     parser.add_argument(
@@ -391,7 +384,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--base-font-size",
         type=int,
-        default=24,
+        default=DEFAULT_FONT_SIZE,
         help="Base font size for subtitles (default: 24)",
     )
     parser.add_argument(
@@ -415,7 +408,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--chunk-size",
         type=float,
-        default=300.0,
+        default=VIDEO_OCR_DEFAULT_CHUNK_SIZE,
         help="Chunk size in seconds for parallel OCR (default: 300.0)",
     )
     parser.add_argument(
@@ -432,21 +425,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # 解析掃描區域
     scan_rect = None
     if args.scan_rect:
         try:
             scan_rect = tuple(map(int, args.scan_rect.split(",")))
             if len(scan_rect) != 4:
                 raise ValueError("Scan rect must have exactly 4 values")
-            # 檢查是否為有效的像素座標（非負整數）
             if not all(x >= 0 for x in scan_rect):
                 raise ValueError("Scan rect values must be non-negative integers")
         except Exception as e:
-            print(f"Error parsing scan rect: {e}")
+            logger.error(f"Error parsing scan rect: {e}")
             sys.exit(1)
 
-    # 解析語言設定
     recognition_languages = args.languages.split(",") if args.languages else None
 
     main(
