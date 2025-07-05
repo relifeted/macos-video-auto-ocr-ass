@@ -6,6 +6,7 @@
 
 import os
 import tempfile
+import unittest
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -44,16 +45,21 @@ class TestCGImageToPil:
         mock_data = bytes([255] * 100 * 50 * 4)  # RGBA 格式
         mock_provider.data = mock_data
 
-        with patch(
-            "macos_video_auto_ocr_ass.video_utils.CGImageGetWidth", return_value=100
-        ), patch(
-            "macos_video_auto_ocr_ass.video_utils.CGImageGetHeight", return_value=50
-        ), patch(
-            "macos_video_auto_ocr_ass.video_utils.CGImageGetDataProvider",
-            return_value=mock_provider,
-        ), patch(
-            "macos_video_auto_ocr_ass.video_utils.CGDataProviderCopyData",
-            return_value=mock_data,
+        with (
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.CGImageGetWidth", return_value=100
+            ),
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.CGImageGetHeight", return_value=50
+            ),
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.CGImageGetDataProvider",
+                return_value=mock_provider,
+            ),
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.CGDataProviderCopyData",
+                return_value=mock_data,
+            ),
         ):
             result = cgimage_to_pil(mock_cg_image)
 
@@ -91,9 +97,10 @@ class TestGetVideoInfo:
 
         mock_asset.tracks.return_value = [mock_track]
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAsset"
-        ) as mock_avasset:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_avasset,
+        ):
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
 
@@ -114,9 +121,10 @@ class TestGetVideoInfo:
         # 沒有影片軌道
         mock_asset.tracks.return_value = []
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAsset"
-        ) as mock_avasset:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_avasset,
+        ):
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
 
@@ -155,15 +163,19 @@ class TestExtractFrames:
         # 模擬成功的幀提取
         mock_generator.copyCGImageAtTime_actualTime_error_.return_value = mock_cg_image
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAsset"
-        ) as mock_avasset, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
-        ) as mock_generator_class, patch(
-            "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
-        ) as mock_cmtime, patch(
-            "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
-        ) as mock_cgimage_to_pil:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_avasset,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
+            ) as mock_generator_class,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
+            ) as mock_cmtime,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
+            ) as mock_cgimage_to_pil,
+        ):
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
@@ -199,15 +211,19 @@ class TestExtractFrames:
 
         mock_generator.copyCGImageAtTime_actualTime_error_.return_value = mock_cg_image
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAsset"
-        ) as mock_avasset, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
-        ) as mock_generator_class, patch(
-            "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
-        ) as mock_cmtime, patch(
-            "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
-        ) as mock_cgimage_to_pil:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_avasset,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
+            ) as mock_generator_class,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
+            ) as mock_cmtime,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
+            ) as mock_cgimage_to_pil,
+        ):
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
@@ -245,15 +261,19 @@ class TestExtractFrames:
 
         mock_generator.copyCGImageAtTime_actualTime_error_.return_value = mock_cg_image
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAsset"
-        ) as mock_avasset, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
-        ) as mock_generator_class, patch(
-            "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
-        ) as mock_cmtime, patch(
-            "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
-        ) as mock_cgimage_to_pil:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_avasset,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
+            ) as mock_generator_class,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
+            ) as mock_cmtime,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
+            ) as mock_cgimage_to_pil,
+        ):
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
@@ -294,13 +314,16 @@ class TestExtractFrames:
             "Extraction failed"
         )
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAsset"
-        ) as mock_avasset, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
-        ) as mock_generator_class, patch(
-            "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
-        ) as mock_cmtime:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_avasset,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
+            ) as mock_generator_class,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
+            ) as mock_cmtime,
+        ):
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
@@ -332,13 +355,16 @@ class TestOCRImage:
         """測試模擬的 OCR"""
         test_image = Image.new("RGB", (100, 50), color="white")
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata, patch(
-            "macos_video_auto_ocr_ass.video_utils.CIImage"
-        ) as mock_ciimage, patch(
-            "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
-        ) as mock_handler_class, patch(
-            "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
-        ) as mock_request_class:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ciimage,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+            ) as mock_handler_class,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+            ) as mock_request_class,
+        ):
             mock_nsdata.dataWithBytes_length_.return_value = "mock_nsdata"
             mock_ciimage.imageWithData_.return_value = "mock_ciimage"
             mock_handler = Mock()
@@ -418,13 +444,16 @@ class TestOCRImage:
         """測試帶語言設定的 OCR"""
         test_image = Image.new("RGB", (100, 50), color="white")
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata, patch(
-            "macos_video_auto_ocr_ass.video_utils.CIImage"
-        ) as mock_ciimage, patch(
-            "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
-        ) as mock_handler_class, patch(
-            "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
-        ) as mock_request_class:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ciimage,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+            ) as mock_handler_class,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+            ) as mock_request_class,
+        ):
             mock_nsdata.dataWithBytes_length_.return_value = "mock_nsdata"
             mock_ciimage.imageWithData_.return_value = "mock_ciimage"
             mock_handler = Mock()
@@ -455,13 +484,16 @@ class TestOCRImage:
         """測試空 OCR 結果"""
         test_image = Image.new("RGB", (100, 50), color="white")
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata, patch(
-            "macos_video_auto_ocr_ass.video_utils.CIImage"
-        ) as mock_ciimage, patch(
-            "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
-        ) as mock_handler_class, patch(
-            "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
-        ) as mock_request_class:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ciimage,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+            ) as mock_handler_class,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+            ) as mock_request_class,
+        ):
             mock_nsdata.dataWithBytes_length_.return_value = "mock_nsdata"
             mock_ciimage.imageWithData_.return_value = "mock_ciimage"
             mock_handler = Mock()
@@ -505,17 +537,20 @@ class TestVideoUtilsIntegration:
 
         mock_generator.copyCGImageAtTime_actualTime_error_.return_value = mock_cg_image
 
-        with patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAsset"
-        ) as mock_avasset, patch(
-            "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
-        ) as mock_generator_class, patch(
-            "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
-        ) as mock_cmtime, patch(
-            "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
-        ) as mock_cgimage_to_pil, patch(
-            "macos_video_auto_ocr_ass.video_utils.ocr_image"
-        ) as mock_ocr_image:
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_avasset,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
+            ) as mock_generator_class,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.CMTimeMakeWithSeconds"
+            ) as mock_cmtime,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.cgimage_to_pil"
+            ) as mock_cgimage_to_pil,
+            patch("macos_video_auto_ocr_ass.video_utils.ocr_image") as mock_ocr_image,
+        ):
             mock_nsurl.fileURLWithPath_.return_value = "mock_url"
             mock_avasset.assetWithURL_.return_value = mock_asset
             mock_generator_class.assetImageGeneratorWithAsset_.return_value = (
@@ -537,3 +572,333 @@ class TestVideoUtilsIntegration:
                 ocr_results = mock_ocr_image(frame, quiet=True)
                 assert len(ocr_results) == 1
                 assert ocr_results[0][0] == "Test"
+
+
+class TestExtractFramesDebug:
+    """補測 extract_frames 的 quiet=False print debug 分支"""
+
+    def test_extract_frames_debug_print(self, monkeypatch):
+        import builtins
+
+        from PIL import Image
+
+        from macos_video_auto_ocr_ass.video_utils import extract_frames
+
+        # mock 依賴
+        mock_asset = Mock()
+        mock_duration = Mock()
+        mock_duration.value = 2000
+        mock_duration.timescale = 1000
+        mock_asset.duration.return_value = mock_duration
+        mock_generator = Mock()
+        mock_cg_image = Mock()
+        mock_cg_image.width = 100
+        mock_cg_image.height = 50
+        mock_generator.copyCGImageAtTime_actualTime_error_.return_value = mock_cg_image
+        # 用 patch.object 取代 monkeypatch selector
+        import sys
+
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].NSURL = Mock()
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].NSURL.fileURLWithPath_ = (
+            Mock(return_value="mock_url")
+        )
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].AVAsset = Mock()
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].AVAsset.assetWithURL_ = (
+            Mock(return_value=mock_asset)
+        )
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].AVAssetImageGenerator = (
+            Mock()
+        )
+        sys.modules[
+            "macos_video_auto_ocr_ass.video_utils"
+        ].AVAssetImageGenerator.assetImageGeneratorWithAsset_ = Mock(
+            return_value=mock_generator
+        )
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].CMTimeMakeWithSeconds = (
+            Mock(return_value="mock_cmtime")
+        )
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].cgimage_to_pil = Mock(
+            return_value=Image.new("RGB", (100, 50))
+        )
+        printed = []
+        monkeypatch.setattr(
+            builtins, "print", lambda *args, **kwargs: printed.append(args)
+        )
+        frames = list(extract_frames("/path/to/video.mp4", interval=1.0, quiet=False))
+        # 應該有 print debug 訊息
+        assert any("DEBUG" in str(x) for args in printed for x in args)
+        assert len(frames) == 2
+
+
+class TestOCRImageHandlerBlockError(unittest.TestCase):
+    """補測 ocr_image handler_block error 分支"""
+
+    def test_ocr_image_handler_block_error(self, monkeypatch):
+        # mock Vision 相關
+        import sys
+
+        from PIL import Image
+
+        from macos_video_auto_ocr_ass.video_utils import ocr_image
+
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].NSData = Mock()
+        sys.modules[
+            "macos_video_auto_ocr_ass.video_utils"
+        ].NSData.dataWithBytes_length_ = Mock(return_value="mock_nsdata")
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].CIImage = Mock()
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].CIImage.imageWithData_ = (
+            Mock(return_value="mock_ciimage")
+        )
+        mock_handler = Mock()
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].VNImageRequestHandler = (
+            Mock()
+        )
+        sys.modules[
+            "macos_video_auto_ocr_ass.video_utils"
+        ].VNImageRequestHandler.alloc.return_value.initWithCIImage_options_.return_value = (
+            mock_handler
+        )
+        mock_request = Mock()
+        sys.modules["macos_video_auto_ocr_ass.video_utils"].VNRecognizeTextRequest = (
+            Mock()
+        )
+        sys.modules[
+            "macos_video_auto_ocr_ass.video_utils"
+        ].VNRecognizeTextRequest.alloc.return_value.initWithCompletionHandler_.return_value = (
+            mock_request
+        )
+
+        # handler_block error 不為 None
+        def perform_requests(requests, error):
+            # 呼叫 handler_block 並傳 error
+            for req in requests:
+                if hasattr(req, "_completion_handler"):
+                    req._completion_handler(req, "some error")
+
+        mock_handler.performRequests_error_ = perform_requests
+        mock_request.results.return_value = []
+        # 測試
+        img = Image.new("RGB", (100, 50))
+        results = ocr_image(img, quiet=True)
+        assert results == []
+
+    @patch("builtins.print")
+    def test_extract_frames_debug_output(self, mock_print):
+        """測試 extract_frames 的 debug 輸出"""
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_asset,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
+            ) as mock_generator,
+        ):
+
+            # 模擬影片資訊
+            mock_asset_instance = Mock()
+            mock_asset_instance.duration.return_value.value = 1000
+            mock_asset_instance.duration.return_value.timescale = 1000
+            mock_asset.assetWithURL_.return_value = mock_asset_instance
+
+            # 模擬生成器
+            mock_generator_instance = Mock()
+            mock_generator.assetImageGeneratorWithAsset_.return_value = (
+                mock_generator_instance
+            )
+
+            # 模擬提取幀失敗
+            mock_generator_instance.copyCGImageAtTime_actualTime_error_.side_effect = (
+                Exception("extract error")
+            )
+
+            frames = list(extract_frames("test.mp4", quiet=False))
+            self.assertEqual(len(frames), 0)
+
+            # 驗證 debug 輸出被呼叫
+            mock_print.assert_called()
+
+    @patch("builtins.print")
+    def test_extract_frames_no_frames_yielded(self, mock_print):
+        """測試 extract_frames 沒有產生任何幀的情況"""
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSURL") as mock_nsurl,
+            patch("macos_video_auto_ocr_ass.video_utils.AVAsset") as mock_asset,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.AVAssetImageGenerator"
+            ) as mock_generator,
+        ):
+
+            # 模擬影片資訊
+            mock_asset_instance = Mock()
+            mock_asset_instance.duration.return_value.value = 1000
+            mock_asset_instance.duration.return_value.timescale = 1000
+            mock_asset.assetWithURL_.return_value = mock_asset_instance
+
+            # 模擬生成器
+            mock_generator_instance = Mock()
+            mock_generator.assetImageGeneratorWithAsset_.return_value = (
+                mock_generator_instance
+            )
+
+            # 模擬所有幀都失敗
+            mock_generator_instance.copyCGImageAtTime_actualTime_error_.return_value = (
+                None
+            )
+
+            frames = list(extract_frames("test.mp4", quiet=False))
+            self.assertEqual(len(frames), 0)
+
+            # 驗證 debug 輸出被呼叫
+            mock_print.assert_called()
+
+    @patch("builtins.print")
+    def test_ocr_image_debug_output(self, mock_print):
+        """測試 ocr_image 的 debug 輸出"""
+        mock_image = Mock()
+        mock_image.size = (100, 100)
+        mock_image.save = Mock()
+
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+            ) as mock_handler,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+            ) as mock_request,
+        ):
+
+            # 模擬 OCR 處理
+            mock_handler_instance = Mock()
+            mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
+                mock_handler_instance
+            )
+
+            mock_request_instance = Mock()
+            mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
+                mock_request_instance
+            )
+
+            results = ocr_image(mock_image, recognition_languages=["en"], quiet=False)
+
+            # 驗證 debug 輸出被呼叫
+            mock_print.assert_called()
+
+    def test_ocr_image_with_error_in_handler(self):
+        """測試 ocr_image 處理器中的錯誤情況"""
+        mock_image = Mock()
+        mock_image.size = (100, 100)
+        mock_image.save = Mock()
+
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+            ) as mock_handler,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+            ) as mock_request,
+        ):
+
+            # 模擬 OCR 處理
+            mock_handler_instance = Mock()
+            mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
+                mock_handler_instance
+            )
+
+            mock_request_instance = Mock()
+            mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
+                mock_request_instance
+            )
+
+            # 模擬處理器拋出例外
+            mock_handler_instance.performRequests_error_.side_effect = Exception(
+                "OCR error"
+            )
+
+            with self.assertRaises(Exception):
+                ocr_image(mock_image)
+
+    def test_ocr_image_with_empty_candidates(self):
+        """測試 ocr_image 候選結果為空的情況"""
+        mock_image = Mock()
+        mock_image.size = (100, 100)
+        mock_image.save = Mock()
+
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+            ) as mock_handler,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+            ) as mock_request,
+        ):
+
+            # 模擬 OCR 處理
+            mock_handler_instance = Mock()
+            mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
+                mock_handler_instance
+            )
+
+            mock_request_instance = Mock()
+            mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
+                mock_request_instance
+            )
+
+            # 模擬空的候選結果
+            mock_obs = Mock()
+            mock_obs.topCandidates_.return_value = []
+            mock_obs.boundingBox.return_value = None
+
+            mock_request_instance.results.return_value = [mock_obs]
+
+            results = ocr_image(mock_image)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0][0], "")  # 空文字
+            self.assertIsNone(results[0][1])  # None 邊界框
+
+    def test_ocr_image_with_none_candidate(self):
+        """測試 ocr_image 候選結果為 None 的情況"""
+        mock_image = Mock()
+        mock_image.size = (100, 100)
+        mock_image.save = Mock()
+
+        with (
+            patch("macos_video_auto_ocr_ass.video_utils.NSData") as mock_nsdata,
+            patch("macos_video_auto_ocr_ass.video_utils.CIImage") as mock_ci_image,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNImageRequestHandler"
+            ) as mock_handler,
+            patch(
+                "macos_video_auto_ocr_ass.video_utils.VNRecognizeTextRequest"
+            ) as mock_request,
+        ):
+
+            # 模擬 OCR 處理
+            mock_handler_instance = Mock()
+            mock_handler.alloc.return_value.initWithCIImage_options_.return_value = (
+                mock_handler_instance
+            )
+
+            mock_request_instance = Mock()
+            mock_request.alloc.return_value.initWithCompletionHandler_.return_value = (
+                mock_request_instance
+            )
+
+            # 模擬候選結果為 None
+            mock_candidate = Mock()
+            mock_candidate.string.return_value = "test"
+
+            mock_obs = Mock()
+            mock_obs.topCandidates_.return_value = [None]  # None 候選
+            mock_obs.boundingBox.return_value = None
+
+            mock_request_instance.results.return_value = [mock_obs]
+
+            results = ocr_image(mock_image)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0][0], "")  # 空文字（因為候選為 None）
+            self.assertIsNone(results[0][1])  # None 邊界框

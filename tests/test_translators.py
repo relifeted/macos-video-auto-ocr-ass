@@ -6,6 +6,7 @@
 
 import os
 import tempfile
+import unittest
 from unittest.mock import MagicMock, Mock, patch
 
 import pysubs2
@@ -433,3 +434,212 @@ class TestTranslatorEdgeCases:
         # 測試翻譯失敗時返回原文
         result = translator.translate("Hello World")
         assert result == "Hello World"  # 返回原文
+
+
+class TestTranslateAssFileShowText:
+    """補測 translate_ass_file 的 show_text=True 分支與 opencc fallback"""
+
+    def test_translate_ass_file_show_text_and_opencc_fallback(
+        self, tmp_path, monkeypatch
+    ):
+        import builtins
+
+        import pysubs2
+
+        from macos_video_auto_ocr_ass.translators import BaseTranslator
+
+        # mock ass_utils.restore_tags 讓其直接設定 line.text
+        def fake_restore_tags(text, tags):
+            # 直接設定 line.text，模擬實際行為
+            return "測試翻譯"
+
+        monkeypatch.setattr(
+            "macos_video_auto_ocr_ass.ass_utils.restore_tags", fake_restore_tags
+        )
+        # mock group_by_time 讓其回傳一個有內容的 group（用 SSAEvent）
+        event = pysubs2.SSAEvent(start=0, end=1000, text="Hello World")
+        monkeypatch.setattr(
+            "macos_video_auto_ocr_ass.ass_utils.group_by_time",
+            lambda subs: {(0, 1000): [event]},
+        )
+        # mock extract_text_and_tags 讓其回傳 (text, [])
+        monkeypatch.setattr(
+            "macos_video_auto_ocr_ass.ass_utils.extract_text_and_tags",
+            lambda text: (text, []),
+        )
+        # mock SSAFile.save 驗證內容
+        save_called = False
+
+        def fake_save(self, path):
+            nonlocal save_called
+            save_called = True
+            print(f"DEBUG: fake_save called with {len(self.events)} events")
+            for e in self.events:
+                print(f"DEBUG: event text = '{e.text}'")
+
+        monkeypatch.setattr(pysubs2.SSAFile, "save", fake_save)
+
+        # mock pysubs2.load 直接回傳 SSAFile 物件
+        def fake_load(path):
+            subs = pysubs2.SSAFile()
+            subs.append(event)
+            return subs
+
+        monkeypatch.setattr(pysubs2, "load", fake_load)
+
+        class DummyTranslator(BaseTranslator):
+            def _load_model(self):
+                self._model = True
+
+            def _translate_text(self, text):
+                return "測試翻譯"
+
+        # 模擬 opencc 未安裝
+        monkeypatch.setattr("macos_video_auto_ocr_ass.translators.opencc", None)
+        # mock print 捕捉
+        printed = []
+        monkeypatch.setattr(
+            builtins, "print", lambda *args, **kwargs: printed.append(args)
+        )
+
+        translator = DummyTranslator("en", "Traditional Chinese")
+        translator._model = True
+        translator.translate_ass_file(
+            "dummy_input.ass", "dummy_output.ass", show_text=True
+        )
+        # 應該有 print 輸出
+        assert any(
+            "原文" in str(x) or "譯文" in str(x) for args in printed for x in args
+        )
+        # 應該有呼叫 save
+        assert save_called
+
+
+class TestTranslateDetectException(unittest.TestCase):
+    """補測 translate detect(result) 例外分支"""
+
+    def test_translate_detect_exception(self, monkeypatch):
+        from macos_video_auto_ocr_ass.translators import BaseTranslator
+
+        class DummyTranslator(BaseTranslator):
+            def _load_model(self):
+                self._model = True
+
+            def _translate_text(self, text):
+                return "some text"
+
+        # 模擬 detect 會丟出例外
+        monkeypatch.setattr(
+            "macos_video_auto_ocr_ass.translators.detect",
+            lambda x: (_ for _ in ()).throw(Exception("fail")),
+        )
+        translator = DummyTranslator("en", "Traditional Chinese")
+        translator._model = True
+        # 不會 raise，會 fallback，應回傳原文
+        result = translator.translate("test")
+        assert result == "test"
+
+    @patch("macos_video_auto_ocr_ass.translators.detect")
+    def test_translate_with_detect_exception(self, mock_detect):
+        """測試 detect 函數拋出例外時的行為"""
+        mock_detect.side_effect = Exception("detect error")
+
+        translator = MarianMTTranslator("en", "traditional chinese")
+        translator._model = Mock()
+        translator._model.return_value = {"choices": [{"text": "測試文字"}]}
+
+        result = translator.translate("test text")
+        self.assertEqual(result, "測試文字")
+
+    @patch("macos_video_auto_ocr_ass.translators.opencc")
+    def test_translate_ass_file_with_opencc_none(self, mock_opencc):
+        """測試 opencc 為 None 時的 translate_ass_file"""
+        mock_opencc.return_value = None
+
+        translator = MarianMTTranslator("en", "traditional chinese")
+        translator._model = Mock()
+        translator._model.return_value = {"choices": [{"text": "測試文字"}]}
+
+        with (
+            patch("pysubs2.load") as mock_load,
+            patch("macos_video_auto_ocr_ass.ass_utils.group_by_time") as mock_group,
+            patch(
+                "macos_video_auto_ocr_ass.ass_utils.extract_text_and_tags"
+            ) as mock_extract,
+            patch("macos_video_auto_ocr_ass.ass_utils.restore_tags") as mock_restore,
+            patch("builtins.print") as mock_print,
+        ):
+
+            # 模擬 ASS 檔案結構
+            mock_subs = Mock()
+            mock_line = Mock()
+            mock_line.text = "test text"
+            mock_subs.events = [mock_line]
+
+            mock_load.return_value = mock_subs
+            mock_group.return_value = {(0, 1000): [mock_line]}
+            mock_extract.return_value = ("test text", "tags")
+            mock_restore.return_value = "測試文字"
+
+            translator.translate_ass_file("input.ass", "output.ass", show_text=True)
+
+            # 驗證 print 被呼叫（show_text=True）
+            mock_print.assert_called()
+
+    def test_marianmt_pivot_translation(self):
+        """測試 MarianMT 的 pivot 翻譯邏輯"""
+        translator = MarianMTTranslator("ja", "zh")
+
+        # 模擬只有 pivot 翻譯器可用的情況
+        translator.translators = {"src2en": Mock(), "en2tgt": Mock()}
+        translator.use_pivot = True
+
+        # 模擬翻譯結果
+        translator.translators["src2en"].return_value = [
+            {"translation_text": "english text"}
+        ]
+        translator.translators["en2tgt"].return_value = [
+            {"translation_text": "中文文字"}
+        ]
+
+        result = translator._translate_text("日本語")
+        self.assertEqual(result, "中文文字")
+
+    def test_marianmt_no_available_translator(self):
+        """測試 MarianMT 沒有可用翻譯器時的錯誤"""
+        translator = MarianMTTranslator("ja", "zh")
+        translator.translators = {}
+
+        with self.assertRaises(RuntimeError) as cm:
+            translator._translate_text("test")
+        self.assertIn("沒有可用的翻譯模型", str(cm.exception))
+
+    def test_create_translator_invalid_type(self):
+        """測試 create_translator 收到無效類型時的錯誤"""
+        with self.assertRaises(ValueError) as cm:
+            create_translator("invalid", "en", "zh")
+        self.assertIn("不支援的翻譯器類型", str(cm.exception))
+
+    @patch("macos_video_auto_ocr_ass.translators.opencc")
+    def test_opencc_import_error(self, mock_opencc):
+        """測試 opencc 導入失敗的情況"""
+        # 模擬導入失敗
+        mock_opencc.side_effect = ImportError("No module named 'opencc'")
+
+        # 重新導入模組以觸發導入錯誤處理
+        import importlib
+        import sys
+
+        if "macos_video_auto_ocr_ass.translators" in sys.modules:
+            del sys.modules["macos_video_auto_ocr_ass.translators"]
+
+        # 這裡我們無法直接測試，因為 opencc 的導入是在模組層級
+        # 但我們可以測試 opencc 為 None 時的行為
+        translator = MarianMTTranslator("en", "traditional chinese")
+        translator._model = Mock()
+        translator._model.return_value = {"choices": [{"text": "test"}]}
+
+        # 手動設定 opencc 為 None 來測試
+        with patch("macos_video_auto_ocr_ass.translators.opencc", None):
+            result = translator.translate("test")
+            self.assertEqual(result, "test")
