@@ -488,9 +488,7 @@ class TestTranslateAssFileShowText:
         )
         # 應該有 logger 輸出
         assert any(
-            "原文" in str(x) or "譯文" in str(x)
-            for args in logged_messages
-            for x in args
+            "原文" in str(x) or "譯文" in str(x) for args in logged_messages for x in args
         )
         # 應該有呼叫 save
         assert save_called
@@ -551,7 +549,6 @@ def test_translate_ass_file_with_opencc_none(mock_opencc):
         patch("macos_video_auto_ocr_ass.ass_utils.restore_tags") as mock_restore,
         patch("macos_video_auto_ocr_ass.translators.logger") as mock_logger,
     ):
-
         # 模擬 ASS 檔案結構
         mock_subs = Mock()
         mock_line = Mock()

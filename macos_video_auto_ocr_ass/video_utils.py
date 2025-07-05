@@ -23,7 +23,12 @@ from Quartz import (
 )
 from Vision import VNImageRequestHandler, VNRecognizeTextRequest
 
-from .constants import DEFAULT_DOWNSCALE, DEFAULT_FONT_SIZE, DEFAULT_INTERVAL
+from .constants import (
+    CM_TIME_SCALE,
+    DEFAULT_DOWNSCALE,
+    DEFAULT_FONT_SIZE,
+    DEFAULT_INTERVAL,
+)
 from .logger import logger
 
 
@@ -168,7 +173,10 @@ def extract_frames(
     if not quiet:
         logger.debug(f"Video duration: {duration} seconds")
 
-    times = [CMTimeMakeWithSeconds(t, 600) for t in np.arange(0, duration, interval)]
+    times = [
+        CMTimeMakeWithSeconds(t, CM_TIME_SCALE)
+        for t in np.arange(0, duration, interval)
+    ]
     yielded = False
 
     for idx, (t, cm_time) in enumerate(zip(np.arange(0, duration, interval), times)):

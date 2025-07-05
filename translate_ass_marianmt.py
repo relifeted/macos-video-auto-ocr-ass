@@ -240,9 +240,7 @@ def main() -> None:
             new_lines.append(new_line)
             continue
         if len(text) > MARIANMT_SPLIT_THRESHOLD:
-            logger.info(
-                f"文本長度 {len(text)} 超過{MARIANMT_SPLIT_THRESHOLD}，將進行自動斷句處理"
-            )
+            logger.info(f"文本長度 {len(text)} 超過{MARIANMT_SPLIT_THRESHOLD}，將進行自動斷句處理")
         try:
             translated = translate_with_loaded_models(text, translators, need_opencc)
         except RuntimeError as e:

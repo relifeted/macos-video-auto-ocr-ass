@@ -594,24 +594,24 @@ class TestExtractFramesDebug:
         import sys
 
         sys.modules["macos_video_auto_ocr_ass.video_utils"].NSURL = Mock()
-        sys.modules["macos_video_auto_ocr_ass.video_utils"].NSURL.fileURLWithPath_ = (
-            Mock(return_value="mock_url")
-        )
+        sys.modules[
+            "macos_video_auto_ocr_ass.video_utils"
+        ].NSURL.fileURLWithPath_ = Mock(return_value="mock_url")
         sys.modules["macos_video_auto_ocr_ass.video_utils"].AVAsset = Mock()
-        sys.modules["macos_video_auto_ocr_ass.video_utils"].AVAsset.assetWithURL_ = (
-            Mock(return_value=mock_asset)
-        )
-        sys.modules["macos_video_auto_ocr_ass.video_utils"].AVAssetImageGenerator = (
-            Mock()
-        )
+        sys.modules[
+            "macos_video_auto_ocr_ass.video_utils"
+        ].AVAsset.assetWithURL_ = Mock(return_value=mock_asset)
+        sys.modules[
+            "macos_video_auto_ocr_ass.video_utils"
+        ].AVAssetImageGenerator = Mock()
         sys.modules[
             "macos_video_auto_ocr_ass.video_utils"
         ].AVAssetImageGenerator.assetImageGeneratorWithAsset_ = Mock(
             return_value=mock_generator
         )
-        sys.modules["macos_video_auto_ocr_ass.video_utils"].CMTimeMakeWithSeconds = (
-            Mock(return_value="mock_cmtime")
-        )
+        sys.modules[
+            "macos_video_auto_ocr_ass.video_utils"
+        ].CMTimeMakeWithSeconds = Mock(return_value="mock_cmtime")
         sys.modules["macos_video_auto_ocr_ass.video_utils"].cgimage_to_pil = Mock(
             return_value=Image.new("RGB", (100, 50))
         )
@@ -640,9 +640,9 @@ def test_ocr_image_handler_block_error(monkeypatch, sample_image):
     from macos_video_auto_ocr_ass.video_utils import ocr_image
 
     sys.modules["macos_video_auto_ocr_ass.video_utils"].NSData = Mock()
-    sys.modules["macos_video_auto_ocr_ass.video_utils"].NSData.dataWithBytes_length_ = (
-        Mock(return_value="mock_nsdata")
-    )
+    sys.modules[
+        "macos_video_auto_ocr_ass.video_utils"
+    ].NSData.dataWithBytes_length_ = Mock(return_value="mock_nsdata")
     sys.modules["macos_video_auto_ocr_ass.video_utils"].CIImage = Mock()
     sys.modules["macos_video_auto_ocr_ass.video_utils"].CIImage.imageWithData_ = Mock(
         return_value="mock_ciimage"

@@ -23,6 +23,9 @@ from macos_video_auto_ocr_ass.constants import (
     DEFAULT_FONT_SIZE,
     DEFAULT_INTERVAL,
     LOGGER_NAME,
+    MAX_COLOR_VALUE,
+    MILLISECONDS_PER_SECOND,
+    TRANSPARENT_ALPHA,
     VIDEO_OCR_DEFAULT_CHUNK_SIZE,
     VIDEO_OCR_DEFAULT_DOWNSCALE_OBJC,
 )
@@ -120,8 +123,8 @@ def add_ocr_to_subs(
         style.margin_b = 0
 
     timestamp = frame_data["timestamp"]
-    start = int(round(timestamp * 1000))
-    end = int(round((timestamp + 1.0) * 1000))
+    start = int(round(timestamp * MILLISECONDS_PER_SECOND))
+    end = int(round((timestamp + 1.0) * MILLISECONDS_PER_SECOND))
 
     for result in frame_data["results"]:
         text = result["text"].strip()
@@ -305,7 +308,9 @@ def main(
     style = pysubs2.SSAStyle(
         fontname="Arial",
         fontsize=base_font_size,
-        primarycolor=pysubs2.Color(255, 255, 255, 0),
+        primarycolor=pysubs2.Color(
+            MAX_COLOR_VALUE, MAX_COLOR_VALUE, MAX_COLOR_VALUE, TRANSPARENT_ALPHA
+        ),
         outlinecolor=pysubs2.Color(0, 0, 0, 0),
         bold=True,
     )

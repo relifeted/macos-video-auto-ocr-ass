@@ -18,10 +18,12 @@ from Quartz import (
 from Vision import VNImageRequestHandler, VNRecognizeTextRequest
 
 from macos_video_auto_ocr_ass.constants import (
+    CM_TIME_SCALE,
     DEFAULT_DOWNSCALE,
     DEFAULT_FONT_SIZE,
     DEFAULT_INTERVAL,
     LOGGER_NAME,
+    MILLISECONDS_PER_SECOND,
 )
 from macos_video_auto_ocr_ass.logger import get_logger
 
@@ -64,7 +66,10 @@ def extract_and_downscale_frames(
     del temp_asset
     if debug:
         logger.debug(f"Video duration: {duration} seconds")
-    times = [CMTimeMakeWithSeconds(t, 600) for t in np.arange(0, duration, interval)]
+    times = [
+        CMTimeMakeWithSeconds(t, CM_TIME_SCALE)
+        for t in np.arange(0, duration, interval)
+    ]
     yielded = False
     for idx, (t, cm_time) in enumerate(zip(np.arange(0, duration, interval), times)):
         if t >= duration:
@@ -184,8 +189,8 @@ def add_ocr_to_subs(
         style.shadow = 0
         style.margin_t = 0
         style.margin_b = 0
-    start = int(round(t * 1000))
-    end = int(round((t + interval) * 1000))
+    start = int(round(t * MILLISECONDS_PER_SECOND))
+    end = int(round((t + interval) * MILLISECONDS_PER_SECOND))
     frame_width, frame_height = frame.size
 
     if original_width is None:

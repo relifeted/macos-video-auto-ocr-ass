@@ -17,6 +17,7 @@ from Quartz import (
 from Vision import VNImageRequestHandler, VNRecognizeTextRequest
 
 from macos_video_auto_ocr_ass.constants import (
+    CM_TIME_SCALE,
     DEFAULT_DOWNSCALE,
     DEFAULT_INTERVAL,
     HEATMAP_ALPHA_MULTIPLIER,
@@ -29,6 +30,7 @@ from macos_video_auto_ocr_ass.constants import (
     HEATMAP_LABEL_TEXT_COLOR,
     HEATMAP_WHITE_BG_COLOR,
     LOGGER_NAME,
+    MAX_COLOR_VALUE,
 )
 from macos_video_auto_ocr_ass.logger import get_logger
 
@@ -66,7 +68,10 @@ def extract_frames(
     generator = AVAssetImageGenerator.assetImageGeneratorWithAsset_(asset)
     generator.setAppliesPreferredTrackTransform_(True)
     duration = asset.duration().value / asset.duration().timescale
-    times = [CMTimeMakeWithSeconds(t, 600) for t in np.arange(0, duration, interval)]
+    times = [
+        CMTimeMakeWithSeconds(t, CM_TIME_SCALE)
+        for t in np.arange(0, duration, interval)
+    ]
     for idx, (t, cm_time) in enumerate(zip(np.arange(0, duration, interval), times)):
         if t >= duration:
             continue
@@ -131,7 +136,7 @@ def create_heatmap_image(
     else:
         heatmap_enhanced = heatmap
 
-    norm = (heatmap_enhanced / maxv * 255).astype(np.uint8)
+    norm = (heatmap_enhanced / maxv * MAX_COLOR_VALUE).astype(np.uint8)
     heat_img = Image.fromarray(norm, mode="L").convert("RGBA")
 
     r, g, b, a = heat_img.split()
@@ -140,7 +145,7 @@ def create_heatmap_image(
         "RGBA",
         (
             r.point(lambda v: 0),
-            g.point(lambda v: min(255, int(v * HEATMAP_GREEN_MULTIPLIER))),
+            g.point(lambda v: min(MAX_COLOR_VALUE, int(v * HEATMAP_GREEN_MULTIPLIER))),
             b.point(lambda v: 0),
             a.point(lambda v: int(v * HEATMAP_ALPHA_MULTIPLIER)),
         ),
